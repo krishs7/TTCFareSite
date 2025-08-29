@@ -1,5 +1,6 @@
+// backend/src/fareEngine.js
 import dayjs from 'dayjs';
-import utc from 'dayjs-plugin-utc';
+import utc from 'dayjs/plugin/utc.js';
 dayjs.extend(utc);
 
 export const Agencies = {
@@ -12,9 +13,9 @@ export const Agencies = {
 };
 
 export const Directions = {
-  TTC_GO: 'TTC_GO',   // TTC → GO (or GO → TTC if you flip start agency)
+  TTC_GO: 'TTC_GO',
   GO_TTC: 'GO_TTC',
-  TTC_905: 'TTC_905'  // TTC ↔ 905 local-local
+  TTC_905: 'TTC_905'
 };
 
 export const PaymentMethods = {
@@ -26,18 +27,21 @@ export const PaymentMethods = {
   E_TICKET: 'E_TICKET'
 };
 
-const isLocalAgency = (a) => a !== Agencies.GO;
 const participatingLocal = new Set([
   Agencies.TTC, Agencies.BRAMPTON, Agencies.DRT, Agencies.MIWAY, Agencies.YRT
 ]);
 
+function isLocal(a) { return a !== Agencies.GO; }
+
 export function computeWindowSeconds(startAgency) {
+  // GO-started trips: 3h; local-started trips: 2h
   return startAgency === Agencies.GO ? 3 * 3600 : 2 * 3600;
 }
 
-export function allowedPayment(paymentMethod) {
-  // Tickets (paper/e-tickets) are not eligible
-  return paymentMethod !== PaymentMethods.PRESTO_TICKET && paymentMethod !== PaymentMethods.E_TICKET;
+export function allowedPayment(method) {
+  // One Fare works for PRESTO card, PRESTO in Google Wallet, credit or debit on PRESTO devices.
+  // PRESTO Tickets and e-tickets are NOT eligible.
+  return method !== PaymentMethods.PRESTO_TICKET && method !== PaymentMethods.E_TICKET;
 }
 
 export function savingsText(direction, startAgency) {
@@ -47,35 +51,23 @@ export function savingsText(direction, startAgency) {
   if (direction === Directions.TTC_905) {
     return 'Your second local transit leg is free within 2 hours on the same card.';
   }
-  // Fallback for unexpected combos
   return startAgency === Agencies.GO
     ? 'Your local leg is discounted/free when transferring from GO within 3 hours.'
     : 'Your connecting leg is discounted/free within 2 hours on local transit.';
 }
 
 /**
- * Main eligibility function.
  * @returns { eligibleNow, deadlineISO, windowSeconds, reasons[], savingsText, expiredNextSteps }
  */
-export function checkEligibility({
-  direction,
-  startAgency,
-  firstTapISO,
-  paymentMethod,
-  sameCard
-}) {
+export function checkEligibility({ direction, startAgency, firstTapISO, paymentMethod, sameCard }) {
   const reasons = [];
 
-  // Basic validation of agencies
   if (!participatingLocal.has(startAgency) && startAgency !== Agencies.GO) {
     reasons.push('Starting agency is not in the participating list.');
   }
-
-  // Payment method rules
   if (!allowedPayment(paymentMethod)) {
     reasons.push('PRESTO Tickets/e-tickets are not eligible for One Fare.');
   }
-
   if (!sameCard) {
     reasons.push('You must use the same card/phone/watch for all taps.');
   }
@@ -88,14 +80,11 @@ export function checkEligibility({
   const withinTime = now.isBefore(deadline) || now.isSame(deadline);
   const eligibleNow = reasons.length === 0 && withinTime;
 
-  // “What happens if expired?”
   let expiredNextSteps = null;
   if (!withinTime) {
-    if (startAgency === Agencies.GO) {
-      expiredNextSteps = 'Your next TTC/local tap will be charged normally. That tap starts a new 2-hour local window.';
-    } else {
-      expiredNextSteps = 'Your next GO tap will be charged normally and starts a new 3-hour GO window.';
-    }
+    expiredNextSteps = (startAgency === Agencies.GO)
+      ? 'Your next TTC/local tap will be charged normally. That tap starts a new 2-hour local window.'
+      : 'Your next GO tap will be charged normally and starts a new 3-hour GO window.';
   }
 
   return {
