@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "icons": "node scripts/generate-icons.mjs",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
@@ -33,6 +34,7 @@
     "globals": "^16.3.0",
     "jsdom": "^26.1.0",
     "postcss": "^8.5.6",
+    "sharp": "^0.34.3",
     "tailwindcss": "^4.1.12",
     "vite": "^7.1.2",
     "vite-plugin-pwa": "^1.0.3",

@@ -11,6 +11,7 @@ export default function NavBar() {
         <nav className="flex items-center gap-2">
           <NavLink to="/" className={({isActive}) => `btn btn-ghost ${isActive?'bg-brand-50':''}`}>Home</NavLink>
           <NavLink to="/tool" className={({isActive}) => `btn ${isActive?'btn-primary':'btn-ghost'}`}>Open the Tool</NavLink>
+          <NavLink to="/install" className={({isActive}) => `btn ${isActive?'btn-primary':'btn-ghost'}`}>Install app</NavLink>
         </nav>
       </div>
     </header>

@@ -3,6 +3,7 @@ import NavBar from './components/NavBar.jsx';
 import Footer from './components/Footer.jsx';
 import Home from './pages/Home.jsx';
 import Tool from './pages/Tool.jsx';
+import Install from './pages/Install.jsx';
 
 function NotFound() {
   return (
@@ -22,6 +23,7 @@ export default function AppShell() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/tool" element={<Tool />} />
+            <Route path="/install" element={<Install />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>
