@@ -32,7 +32,10 @@ export default defineConfig({
       '/api': 'http://localhost:4000'
     }
   },
-  build: {
-    outDir: 'dist'
+  build: { outDir: 'dist' },
+  test: {
+    environment: 'jsdom',
+    setupFiles: './vitest.setup.js',
+    globals: true
   }
 });

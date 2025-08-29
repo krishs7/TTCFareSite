@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
+import { API_BASE } from './apiBase.js';
+import { formatHMS } from './time.js';
 
 const Agencies = {
   TTC: 'TTC',
@@ -9,11 +11,7 @@ const Agencies = {
   MIWAY: 'MIWAY',
   YRT: 'YRT'
 };
-const Directions = {
-  TTC_GO: 'TTC_GO',
-  GO_TTC: 'GO_TTC',
-  TTC_905: 'TTC_905'
-};
+const Directions = { TTC_GO: 'TTC_GO', GO_TTC: 'GO_TTC', TTC_905: 'TTC_905' };
 const PaymentMethods = {
   PRESTO_CARD: 'PRESTO_CARD',
   CREDIT: 'CREDIT',
@@ -22,7 +20,6 @@ const PaymentMethods = {
   PRESTO_TICKET: 'PRESTO_TICKET',
   E_TICKET: 'E_TICKET'
 };
-
 const localAgencies = [Agencies.TTC, Agencies.BRAMPTON, Agencies.DRT, Agencies.MIWAY, Agencies.YRT];
 
 function useCountdown(deadlineISO) {
@@ -35,19 +32,19 @@ function useCountdown(deadlineISO) {
   if (!deadlineISO) return { msLeft: 0, expired: false, pretty: '' };
   const msLeft = Math.max(0, new Date(deadlineISO).getTime() - now);
   const expired = msLeft <= 0;
-  const pretty = new Date(msLeft).toISOString().substr(14, 5);
+  const pretty = formatHMS(msLeft); // <-- FIX: show H:MM:SS when needed
   return { msLeft, expired, pretty };
 }
 
 async function checkEligibility(payload) {
-  const res = await fetch('/api/check', {
+  const res = await fetch(`${API_BASE}/api/check`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload)
   });
   if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`API error: ${res.status} ${t}`);
+    const t = await res.text().catch(()=> '');
+    throw new Error(`API error ${res.status}: ${t || res.statusText}`);
   }
   return res.json();
 }
@@ -70,21 +67,21 @@ export default function App() {
 
   const [result, setResult] = useState(null);
   const [firstTapISO, setFirstTapISO] = useState(null);
-  const { msLeft, expired, pretty } = useCountdown(result?.deadlineISO);
+  const [errorMsg, setErrorMsg] = useState('');
+  const { expired, pretty } = useCountdown(result?.deadlineISO);
 
-  useEffect(() => {
-    localStorage.setItem('dir', direction);
-  }, [direction]);
+  useEffect(() => { localStorage.setItem('dir', direction); }, [direction]);
 
-  // Notifications at T-5 and T-1 min (best-effort without push)
   const scheduledRef = useRef({ five: false, one: false });
   useEffect(() => {
     if (!result?.deadlineISO) return;
     const deadline = new Date(result.deadlineISO).getTime();
     const maybeNotify = async (title, body) => {
-      if (!('Notification' in window)) return;
-      if (Notification.permission === 'default') await Notification.requestPermission();
-      if (Notification.permission === 'granted') new Notification(title, { body });
+      try {
+        if (!('Notification' in window)) return;
+        if (Notification.permission === 'default') await Notification.requestPermission();
+        if (Notification.permission === 'granted') new Notification(title, { body });
+      } catch {}
     };
     const id = setInterval(() => {
       const now = Date.now();
@@ -108,24 +105,25 @@ export default function App() {
   }, [direction]);
 
   const onStartTap = async () => {
-    const base = dayjs();
-    const start = base.subtract(Number(backdateMin) || 0, 'minute').toISOString();
-    const payload = {
-      direction,
-      startAgency,
-      firstTapISO: start,
-      paymentMethod,
-      sameCard
-    };
-    const r = await checkEligibility(payload);
-    setFirstTapISO(start);
-    setResult(r);
-    scheduledRef.current = { five: false, one: false };
+    setErrorMsg('');
+    const start = dayjs().subtract(Number(backdateMin) || 0, 'minute').toISOString();
+    try {
+      const r = await checkEligibility({
+        direction, startAgency, firstTapISO: start, paymentMethod, sameCard
+      });
+      setFirstTapISO(start);
+      setResult(r);
+      scheduledRef.current = { five: false, one: false };
+    } catch (e) {
+      if (import.meta.env.MODE !== 'test') console.error(e);
+      setErrorMsg(String(e.message || e));
+    }
   };
 
   const reset = () => {
     setResult(null);
     setFirstTapISO(null);
+    setErrorMsg('');
     scheduledRef.current = { five: false, one: false };
   };
 
@@ -138,18 +136,9 @@ export default function App() {
 
       <Section title="Direction">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button
-            onClick={() => { setDirection(Directions.TTC_GO); setStartAgency(Agencies.TTC); }}
-            aria-pressed={direction === Directions.TTC_GO}
-          >TTC → GO</button>
-          <button
-            onClick={() => { setDirection(Directions.GO_TTC); setStartAgency(Agencies.GO); }}
-            aria-pressed={direction === Directions.GO_TTC}
-          >GO → TTC</button>
-          <button
-            onClick={() => { setDirection(Directions.TTC_905); setStartAgency(Agencies.TTC); }}
-            aria-pressed={direction === Directions.TTC_905}
-          >TTC ⇄ 905 Local</button>
+          <button onClick={() => { setDirection(Directions.TTC_GO); setStartAgency(Agencies.TTC); }} aria-pressed={direction === Directions.TTC_GO}>TTC → GO</button>
+          <button onClick={() => { setDirection(Directions.GO_TTC); setStartAgency(Agencies.GO); }} aria-pressed={direction === Directions.GO_TTC}>GO → TTC</button>
+          <button onClick={() => { setDirection(Directions.TTC_905); setStartAgency(Agencies.TTC); }} aria-pressed={direction === Directions.TTC_905}>TTC ⇄ 905 Local</button>
         </div>
       </Section>
 
@@ -178,14 +167,7 @@ export default function App() {
       </Section>
 
       <Section title="Backdate (if you forgot)">
-        <input
-          type="number"
-          min="0"
-          max="10"
-          value={backdateMin}
-          onChange={e => setBackdateMin(e.target.value)}
-          style={{ width: 80 }}
-        /> minutes ago
+        <input type="number" min="0" max="10" value={backdateMin} onChange={e => setBackdateMin(e.target.value)} style={{ width: 80 }} /> minutes ago
       </Section>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -193,26 +175,32 @@ export default function App() {
         {result && <button onClick={reset}>Reset</button>}
       </div>
 
+      {errorMsg && (
+        <div role="alert" style={{ color: '#b00', marginBottom: 16 }}>
+          {errorMsg}
+        </div>
+      )}
+
       {result && (
         <Section title="Status">
           <div role="status" aria-live="polite">
             <p style={{ margin: '8px 0', fontSize: 18 }}>
-              {result.eligibleNow ? '✅ Eligible' : (result.reasons.length ? '❌ Not eligible' : (expired ? '❌ Window expired' : '❌ Not eligible'))}
+              {result.eligibleNow ? '✅ Eligible'
+                : (result.reasons.length ? '❌ Not eligible'
+                  : (expired ? '❌ Window expired' : '❌ Not eligible'))}
             </p>
             <p style={{ margin: '8px 0' }}>{result.savingsText}</p>
             <p style={{ margin: '8px 0' }}>
-              First tap: <strong>{dayjs(firstTapISO).format('MMM D, HH:mm:ss')}</strong>
+              First tap: <strong>{firstTapISO ? dayjs(firstTapISO).format('MMM D, HH:mm:ss') : '-'}</strong>
             </p>
             <p style={{ margin: '8px 0' }}>
-              Tap-by deadline: <strong>{dayjs(result.deadlineISO).format('MMM D, HH:mm:ss')}</strong>
+              Tap-by deadline: <strong>{result.deadlineISO ? dayjs(result.deadlineISO).format('MMM D, HH:mm:ss') : '-'}</strong>
             </p>
             <p style={{ margin: '8px 0', fontSize: 28 }}>
-              ⏱️ {expired ? '00:00' : result.eligibleNow ? pretty : pretty}
+              ⏱️ {expired ? '00:00' : pretty}
             </p>
             {!result.eligibleNow && result.reasons.length > 0 && (
-              <ul>
-                {result.reasons.map((r, i) => <li key={i}>{r}</li>)}
-              </ul>
+              <ul>{result.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
             )}
             {expired && result.expiredNextSteps && (
               <p style={{ color: '#b00' }}>{result.expiredNextSteps}</p>
