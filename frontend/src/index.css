@@ -1,68 +1,41 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+/* 1) Pull in Tailwind’s layers */
+@import "tailwindcss";
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+/* 2) Your design tokens */
+@theme {
+  --color-brand-50:  #eef6ff;
+  --color-brand-100: #d9eaff;
+  --color-brand-200: #b6d5ff;
+  --color-brand-300: #86b7ff;
+  --color-brand-400: #5290ff;
+  --color-brand-500: #2b6cff; /* primary */
+  --color-brand-600: #1f54d6;
+  --color-brand-700: #1b46ad;
+  --color-brand-800: #183f8c;
+  --color-brand-900: #142f63;
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+  /* custom shadow token */
+  --shadow-soft: 0 10px 30px -12px rgb(0 0 0 / 0.15);
 }
 
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
+/* 3) App-wide basics */
+html, body, #root { height: 100%; }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+/* 4) Small component classes */
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium transition-colors;
   }
-  a:hover {
-    color: #747bff;
+  .btn-primary {
+    @apply bg-brand-500 text-white hover:bg-brand-600 active:bg-brand-700;
   }
-  button {
-    background-color: #f9f9f9;
+  .btn-ghost {
+    @apply text-brand-700 hover:bg-brand-50;
   }
+  .card {
+    box-shadow: var(--shadow-soft);
+    @apply rounded-2xl bg-white ring-1 ring-black/5;
+  }
+  .container-narrow { @apply max-w-5xl mx-auto px-4 sm:px-6; }
 }
+

@@ -1,0 +1,30 @@
+<svg width="1200" height="700" viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title>Toronto skyline vector</title>
+  <defs>
+    <linearGradient id="g" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#2b6cff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#2b6cff" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="700" fill="url(#g)"/>
+  <!-- Simple CN Tower -->
+  <g fill="#2b6cff" opacity="0.85">
+    <rect x="585" y="140" width="6" height="260" rx="3"/>
+    <rect x="560" y="220" width="56" height="18" rx="9"/>
+    <rect x="540" y="238" width="96" height="12" rx="6"/>
+    <rect x="590" y="100" width="2" height="40"/>
+    <circle cx="591" cy="96" r="6"/>
+  </g>
+  <!-- Buildings -->
+  <g fill="#1f54d6" opacity="0.7">
+    <rect x="180" y="340" width="80" height="180" rx="6"/>
+    <rect x="260" y="300" width="90" height="220" rx="6"/>
+    <rect x="360" y="360" width="110" height="160" rx="6"/>
+    <rect x="750" y="320" width="100" height="200" rx="6"/>
+    <rect x="870" y="360" width="90" height="160" rx="6"/>
+    <rect x="980" y="310" width="80" height="210" rx="6"/>
+  </g>
+  <!-- Lake/ground -->
+  <rect y="520" width="1200" height="180" fill="#eaf1ff"/>
+</svg>
+

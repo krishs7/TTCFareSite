@@ -1,13 +1,15 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   plugins: [
     react(),
+    tailwindcss(), // Tailwind v4 plugin
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon.svg', 'hero-toronto.svg', 'pwa-192.png', 'pwa-512.png'],
       manifest: {
         name: 'One-Fare Helper',
         short_name: 'One-Fare',
@@ -20,17 +22,12 @@ export default defineConfig({
           { src: 'pwa-512.png', sizes: '512x512', type: 'image/png' }
         ]
       },
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
-      }
+      workbox: { globPatterns: ['**/*.{js,css,html,ico,png,svg}'] }
     })
   ],
   server: {
     port: 5173,
-    proxy: {
-      // Dev proxy to backend on 4000
-      '/api': 'http://localhost:4000'
-    }
+    proxy: { '/api': 'http://localhost:4000' }
   },
   build: { outDir: 'dist' },
   test: {
@@ -39,3 +36,4 @@ export default defineConfig({
     globals: true
   }
 });
+
