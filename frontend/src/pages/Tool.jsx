@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import { API_BASE } from '../apiBase.js';
 import { formatHMS } from '../time.js';
+import { ensurePushSubscription, scheduleReminders, isStandalonePWA } from '../push.js';
 
 const Agencies = {
   TTC: 'TTC',
@@ -114,6 +115,14 @@ export default function Tool() {
       setFirstTapISO(start);
       setResult(r);
       scheduledRef.current = { five: false, one: false };
+      try {
+        if (r?.deadlineISO) {
+          const out = await scheduleReminders(r.deadlineISO);
+          if (!out?.ok && out?.reason === 'no-subscription') {
+            // user hasn’t enabled background reminders; do nothing
+          }
+        }
+      } catch {}
     } catch (e) {
       if (import.meta.env.MODE !== 'test') console.error(e);
       setErrorMsg(String(e.message || e));
@@ -201,6 +210,29 @@ export default function Tool() {
             />
             <span>minutes ago</span>
           </div>
+        </Section>
+        <Section title="Background reminders (optional)">
+          <p className="mb-2 text-slate-600">
+            Enable push alerts so you’ll get the 5-minute and 1-minute reminders even if you leave the app.
+            { /iPhone|iPad|iPod/.test(navigator.userAgent) && !isStandalonePWA() && (
+              <span className="block mt-1">
+                On iPhone/iPad, first <strong>install</strong> the app (Share → Add to Home Screen), then press Enable.
+              </span>
+            )}
+          </p>
+          <button
+            className="btn btn-ghost"
+            onClick={async () => {
+              try {
+                await ensurePushSubscription();
+                alert('Background reminders enabled ✅');
+              } catch (e) {
+                alert(`Couldn’t enable: ${e.message || e}`);
+              }
+            }}
+          >
+            Enable background reminders
+          </button>
         </Section>
 
         <div className="flex gap-2 mb-4">

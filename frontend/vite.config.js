@@ -8,7 +8,6 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      // ensure the register helper is available
       injectRegister: 'auto',
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'hero-toronto.svg', 'pwa-192.png', 'pwa-512.png'],
@@ -18,20 +17,28 @@ export default defineConfig({
         start_url: '/',
         display: 'standalone',
         background_color: '#ffffff',
-        theme_color: '#111827',
+        theme_color: '#0f172a',
         icons: [
-          { src: 'pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-          { src: 'pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+          { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512.png', sizes: '512x512', type: 'image/png' }
         ]
       },
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        clientsClaim: true,  // take control immediately
-        skipWaiting: true    // activate the new SW without reload prompt
-      }
+      // 👇 switch to injectManifest so we can add our push handlers
+      strategies: 'injectManifest',
+      srcDir: '.',
+      filename: 'sw.js',
+      devOptions: { enabled: true, type: 'module' }
     })
   ],
-  server: { port: 5173, proxy: { '/api': 'http://localhost:4000' } },
+  //server: { port: 5173, proxy: { '/api': 'http://localhost:4000' } },
+  server: {
+    port: 5173,
+    host: true,                         // listen on all interfaces
+    // allow your tunnel host; leading dot allows all subdomains
+    allowedHosts: ['.ngrok-free.app'],  // or '.ngrok.io' if that’s your domain
+    hmr: { clientPort: 443 },           // HMR over HTTPS tunnel
+    proxy: { '/api': 'http://localhost:4000' }
+  },
   build: { outDir: 'dist' },
   test: { environment: 'jsdom', setupFiles: './vitest.setup.js', globals: true }
 });

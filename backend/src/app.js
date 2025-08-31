@@ -7,6 +7,9 @@ import rateLimit from 'express-rate-limit';
 import { CORS_ALLOWLIST } from './config.js';
 import checkRoute from './routes/check.js';
 import stopsRoute from './routes/stops.js';
+import pushRoute from './routes/push.js';
+import remindersRoute from './routes/reminders.js';
+import jobsRoute from './routes/jobs.js';
 
 export const app = express();
 
@@ -33,6 +36,9 @@ app.use('/api/', rateLimit({ windowMs: 60 * 1000, max: 120 }));
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api/check', checkRoute);
 app.use('/api/stops', stopsRoute);
+app.use('/api/push', pushRoute);
+app.use('/api/reminders', remindersRoute);
+app.use('/api/jobs', jobsRoute);
 
 export default app;
 

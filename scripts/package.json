@@ -1,5 +1,9 @@
 {
   "name": "ttcfaresite-scripts",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "dotenv": "^17.2.1",
+    "pg": "^8.16.3"
+  }
 }
