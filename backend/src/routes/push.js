@@ -3,8 +3,15 @@ import { Router } from 'express';
 import { getPool } from '../db.js';
 const router = Router();
 
+// GET /api/push/public-key
 router.get('/public-key', (_req, res) => {
-  res.json({ publicKey: process.env.VAPID_PUBLIC_KEY || '' });
+  const key = process.env.VAPID_PUBLIC_KEY || '';
+  if (!key) {
+    return res.status(500).json({ error: 'VAPID_PUBLIC_KEY missing on server' });
+  }
+  // Return clean JSON (no extra quotes / whitespace) and avoid caching
+  res.set('Cache-Control', 'no-store');
+  res.json({ publicKey: key.trim() });
 });
 
 router.post('/subscribe', async (req, res) => {
