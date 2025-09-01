@@ -1,0 +1,97 @@
+// src/push-client.js
+import { API_BASE } from './apiBase.js';
+
+// Detect installed PWA (iOS requires install for Web Push)
+export function isStandalonePWA() {
+  return (
+    window.matchMedia?.('(display-mode: standalone)')?.matches ||
+    window.navigator?.standalone === true
+  );
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replaceAll('-', '+').replaceAll('_', '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+async function getPublicKey() {
+  // Your backend already exposes this
+  const r = await fetch(`${API_BASE}/api/push/public-key`);
+  if (!r.ok) throw new Error('Could not fetch VAPID key');
+  const j = await r.json();
+  return j.publicKey || j.key || '';
+}
+
+/**
+ * Request permission, ensure a subscription, and persist it to your backend.
+ * Must be called from a user gesture (click/tap) for iOS.
+ * Works on desktop browsers too (if supported).
+ */
+export async function ensurePushSubscription() {
+  // 1) Basic capability checks (Push API requires SW + PushManager + Notifications)
+  if (!('serviceWorker' in navigator)) throw new Error('Service worker not supported');
+  if (!('Notification' in window)) throw new Error('Notifications not supported');
+  // iOS: only installed web apps can push
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.userAgent.includes('Mac') && 'ontouchend' in window);
+  if (isIOS && !isStandalonePWA()) {
+    throw new Error('On iPhone/iPad, install the app first (Share → Add to Home Screen).');
+  }
+
+  // 2) Permission (must be inside a user gesture)
+  if (Notification.permission === 'default') {
+    const res = await Notification.requestPermission(); // must be user-gesture driven on iOS
+    if (res !== 'granted') throw new Error('Notifications denied');
+  }
+  if (Notification.permission !== 'granted') throw new Error('Notifications denied');
+
+  // 3) Wait for SW to be ready (guard with a timeout so it never hangs)
+  const ready = await Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('Service worker not ready')), 7000)),
+  ]);
+
+  if (!ready?.pushManager) throw new Error('Push Manager not available');
+
+  // 4) Get live VAPID key from backend to avoid drift
+  const publicKey = await getPublicKey();
+  if (!publicKey) throw new Error('Missing VAPID public key');
+
+  // 5) Reuse existing subscription if present, otherwise subscribe
+  const existing = await ready.pushManager.getSubscription();
+  let sub = existing;
+  if (!sub) {
+    sub = await ready.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+  }
+
+  // 6) Persist to backend; store id for later schedules
+  const res = await fetch(`${API_BASE}/api/push/subscribe`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ subscription: sub.toJSON(), userAgent: navigator.userAgent }),
+  });
+  if (!res.ok) throw new Error('Failed to save subscription');
+  const { id } = await res.json();
+  localStorage.setItem('push_sub_id', id);
+  return id;
+}
+
+/** Call this when you start a session to queue T-5 / T-1 jobs on the server */
+export async function scheduleReminders(deadlineISO) {
+  const subscriptionId = localStorage.getItem('push_sub_id');
+  if (!subscriptionId) throw new Error('Background reminders are not enabled yet');
+  const r = await fetch(`${API_BASE}/api/reminders`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ subscriptionId, deadlineISO }),
+  });
+  if (!r.ok) throw new Error('Failed to schedule reminders');
+  return r.json();
+}
+

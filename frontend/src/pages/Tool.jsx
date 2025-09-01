@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import { API_BASE } from '../apiBase.js';
 import { formatHMS } from '../time.js';
-import { ensurePushSubscription, scheduleReminders, isStandalonePWA } from '../push.js';
+import { ensurePushSubscription, scheduleReminders, isStandalonePWA } from '../push-client.js';
 
 const Agencies = {
   TTC: 'TTC',
@@ -220,7 +220,7 @@ export default function Tool() {
               </span>
             )}
           </p>
-          <button
+          <button type="button"
             className="btn btn-ghost"
             onClick={async () => {
               try {
