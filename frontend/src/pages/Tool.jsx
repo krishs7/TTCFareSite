@@ -62,25 +62,38 @@ function Section({ title, children }) {
 
 function SmsEnroll() {
   const [phone, setPhone] = React.useState('');
+  const [carrier, setCarrier] = React.useState('publicmobile'); // default for you
   const [code, setCode] = React.useState('');
   const [phase, setPhase] = React.useState(() => (getSmsRecipientId() ? 'verified' : 'idle'));
   const [msg, setMsg] = React.useState('');
 
-  const clean = s => s.replace(/[^\d+]/g, '');
+  // Convert "6471234567" -> "+16471234567"; keep "+1..." as-is
+  const toE164 = (s) => {
+    const digits = String(s).replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.startsWith('1') && digits.length === 11) return '+' + digits;
+    if (digits.length === 10) return '+1' + digits;
+    if (s.trim().startsWith('+')) return s.trim();
+    return '+' + digits;
+  };
+
   const onStart = async () => {
     setMsg('');
     try {
-      await startSmsVerification(clean(phone));
+      const e164 = toE164(phone);
+      await startSmsVerification(e164, carrier);
       setPhase('code');
       setMsg('Code sent. Check your texts.');
     } catch (e) {
       setMsg(String(e.message || e));
     }
   };
+
   const onVerify = async () => {
     setMsg('');
     try {
-      await verifySmsCode(clean(phone), code.trim());
+      const e164 = toE164(phone);
+      await verifySmsCode(e164, code.trim());
       setPhase('verified');
       setMsg('Number verified ✅');
     } catch (e) {
@@ -93,31 +106,46 @@ function SmsEnroll() {
   }
 
   return (
-    <div className="flex flex-col sm:flex-row gap-2 items-start">
-      {phase !== 'code' ? (
-        <>
-          <input
-            className="w-64 rounded-xl border border-slate-300 px-3 py-2"
-            placeholder="+16475551234"
-            value={phone}
-            onChange={e => setPhone(e.target.value)}
-            inputMode="tel"
-          />
-          <button className="btn btn-ghost" onClick={onStart}>Send code</button>
-        </>
-      ) : (
-        <>
-          <input
-            className="w-40 rounded-xl border border-slate-300 px-3 py-2"
-            placeholder="6-digit code"
-            value={code}
-            onChange={e => setCode(e.target.value)}
-            inputMode="numeric"
-            maxLength={6}
-          />
-          <button className="btn btn-ghost" onClick={onVerify}>Verify</button>
-        </>
-      )}
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col sm:flex-row gap-2 items-start">
+        {phase !== 'code' ? (
+          <>
+            <input
+              className="w-64 rounded-xl border border-slate-300 px-3 py-2"
+              placeholder="+16475551234"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              inputMode="tel"
+            />
+            <select
+              className="w-64 rounded-xl border border-slate-300 px-3 py-2"
+              value={carrier}
+              onChange={(e) => setCarrier(e.target.value)}
+              aria-label="Carrier"
+              title="Carrier"
+            >
+              <option value="publicmobile">Public Mobile (TELUS)</option>
+              <option value="telus">TELUS</option>
+              <option value="bell">Bell</option>
+              <option value="rogers">Rogers</option>
+              <option value="freedom">Freedom</option>
+            </select>
+            <button className="btn btn-ghost" onClick={onStart}>Send code</button>
+          </>
+        ) : (
+          <>
+            <input
+              className="w-40 rounded-xl border border-slate-300 px-3 py-2"
+              placeholder="6-digit code"
+              value={code}
+              onChange={e => setCode(e.target.value)}
+              inputMode="numeric"
+              maxLength={6}
+            />
+            <button className="btn btn-ghost" onClick={onVerify}>Verify</button>
+          </>
+        )}
+      </div>
       {msg && <div className="text-slate-600">{msg}</div>}
     </div>
   );
