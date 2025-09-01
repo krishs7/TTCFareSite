@@ -1,5 +1,7 @@
 // src/push-client.js
 import { API_BASE } from './apiBase.js';
+// TEMP: verify we’re using the right API base in the installed PWA
+console.log('[push] API_BASE =', API_BASE);
 
 // --- PWA helpers ---
 export function isStandalonePWA() {
@@ -65,7 +67,8 @@ async function fetchVapidPublicKey() {
     cache: 'no-store',
   });
   if (!r.ok) throw new Error('Could not fetch VAPID public key from server');
-
+  
+  
   // Read ONCE
   const raw = await r.text();
   let key = '';
