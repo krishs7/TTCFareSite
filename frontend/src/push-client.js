@@ -69,6 +69,74 @@ async function waitForServiceWorkerReady({ timeoutMs = 20000 } = {}) {
 }
 
 
+// Robust wait for a controlling/active SW on iOS first-run
+async function ensureActiveServiceWorker({ timeoutMs = 30000, allowOneReload = true } = {}) {
+  if (!('serviceWorker' in navigator)) throw new Error('Service worker not supported');
+
+  // If there is no registration yet, defensively register now (same scope as Vite PWA)
+  let reg = await navigator.serviceWorker.getRegistration();
+  if (!reg) {
+    reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  }
+
+  // Fast path: already controlled
+  if (navigator.serviceWorker.controller && reg?.active) {
+    return reg;
+  }
+
+  // Watch installing/waiting worker state → 'activated'
+  const sw = reg.installing || reg.waiting;
+  const stateP = sw
+    ? new Promise((resolve) => {
+        const onState = () => {
+          if (sw.state === 'activated') {
+            sw.removeEventListener('statechange', onState);
+            resolve(true);
+          }
+        };
+        sw.addEventListener('statechange', onState);
+        onState();
+      })
+    : Promise.resolve(false);
+
+  // Also watch for controllerchange (page becomes controlled)
+  const controlP = new Promise((resolve) => {
+    const onCtrl = () => {
+      navigator.serviceWorker.removeEventListener('controllerchange', onCtrl);
+      resolve(true);
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', onCtrl, { once: true });
+  });
+
+  // Race: .ready, activation state, controllerchange, and a timeout
+  const timeoutP = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('timeout')), timeoutMs)
+  );
+
+  try {
+    await Promise.race([navigator.serviceWorker.ready, stateP, controlP, timeoutP]);
+  } catch (e) {
+    // iOS can need a one-time reload for first control; do it only once per session
+    if (
+      allowOneReload &&
+      !navigator.serviceWorker.controller &&
+      (window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator?.standalone)
+    ) {
+      if (!sessionStorage.getItem('sw_reloaded_once')) {
+        sessionStorage.setItem('sw_reloaded_once', '1');
+        location.reload();
+        await new Promise(() => {}); // stop further work post-reload
+      }
+    }
+    throw new Error('Service worker still starting up');
+  }
+
+  // Prefer the resolved ready registration; fall back to current registration
+  try { return await navigator.serviceWorker.ready; }
+  catch { return (await navigator.serviceWorker.getRegistration()) || reg; }
+}
+
+
 /**
  * Request permission, ensure a subscription, and persist it to your backend.
  * Must be called from a user gesture (click/tap) for iOS.
@@ -91,7 +159,7 @@ export async function ensurePushSubscription() {
   }
   if (Notification.permission !== 'granted') throw new Error('Notifications denied');
 
-  const ready = await waitForServiceWorkerReady({ timeoutMs: 20000 });
+  const ready = await ensureActiveServiceWorker({ timeoutMs: 30000, allowOneReload: true });
 
   if (!ready?.pushManager) throw new Error('Push Manager not available');
 
