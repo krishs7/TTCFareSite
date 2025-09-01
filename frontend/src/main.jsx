@@ -6,11 +6,9 @@ import ErrorBoundary from './ErrorBoundary.jsx';
 
 // ---- PWA registration (explicit) ----
 if ('serviceWorker' in navigator) {
-  // Use dynamic import so dev builds don't choke
-  window.addEventListener('load', async () => {
+  (async () => {
     try {
       const { registerSW } = await import('virtual:pwa-register');
-      // immediate: true => register right away
       registerSW({
         immediate: true,
         onRegistered(swReg) {
@@ -23,7 +21,7 @@ if ('serviceWorker' in navigator) {
     } catch (e) {
       console.error('[PWA] SW import error', e);
     }
-  });
+  })();
 }
 // -------------------------------------
 

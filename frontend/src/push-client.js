@@ -26,6 +26,49 @@ async function getPublicKey() {
   return j.publicKey || j.key || '';
 }
 
+// Robust wait for a controlling/active SW: listens for controllerchange and checks registration.active
+async function waitForServiceWorkerReady({ timeoutMs = 20000 } = {}) {
+  if (!('serviceWorker' in navigator)) throw new Error('Service worker not supported');
+
+  // Fast path: already controlling
+  if (navigator.serviceWorker.controller) {
+    try { return await navigator.serviceWorker.ready; } catch (_) { /* fall through */ }
+  }
+
+  // Race controllerchange, .ready, and a timeout
+  const readyP = navigator.serviceWorker.ready.catch(() => null);
+
+  const controllerP = new Promise((resolve) => {
+    const onChange = () => {
+      navigator.serviceWorker.removeEventListener('controllerchange', onChange);
+      resolve(true);
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', onChange, { once: true });
+  });
+
+  const timeoutP = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Service worker still starting up')), timeoutMs)
+  );
+
+  try {
+    await Promise.race([readyP, controllerP, timeoutP]);
+  } catch (e) {
+    // One last check: if there's an active registration, proceed with it
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg?.active) return reg;
+    throw e;
+  }
+
+  // Prefer .ready when it eventually resolves; fallback to the current registration
+  try { return await navigator.serviceWorker.ready; }
+  catch {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) return reg;
+    throw new Error('Service worker registration missing');
+  }
+}
+
+
 /**
  * Request permission, ensure a subscription, and persist it to your backend.
  * Must be called from a user gesture (click/tap) for iOS.
@@ -48,11 +91,7 @@ export async function ensurePushSubscription() {
   }
   if (Notification.permission !== 'granted') throw new Error('Notifications denied');
 
-  // 3) Wait for SW to be ready (guard with a timeout so it never hangs)
-  const ready = await Promise.race([
-    navigator.serviceWorker.ready,
-    new Promise((_, rej) => setTimeout(() => rej(new Error('Service worker not ready')), 7000)),
-  ]);
+  const ready = await waitForServiceWorkerReady({ timeoutMs: 20000 });
 
   if (!ready?.pushManager) throw new Error('Push Manager not available');
 
