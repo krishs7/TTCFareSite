@@ -163,8 +163,21 @@ export async function ensurePushSubscription() {
   const applicationServerKey = urlBase64ToUint8ArraySafe(rawKey);
 
   // Reuse existing subscription if present, else subscribe
-  const existing = await reg.pushManager.getSubscription();
-  const sub = existing || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+    let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    try {
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+    } catch (err) {
+      // If a stale subscription with a different appServerKey exists, some UAs throw InvalidStateError.
+      if (err && err.name === 'InvalidStateError') {
+        const stale = await reg.pushManager.getSubscription();
+        if (stale) await stale.unsubscribe();
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+      } else {
+        throw err;
+      }
+    }
+  }
 
   // Persist to backend
   const res = await fetch(`${API_BASE}/api/push/subscribe`, {
