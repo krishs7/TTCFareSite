@@ -11,15 +11,13 @@ export function isStandalonePWA() {
 
 // --- Base64url helpers (robust for Safari/iOS quirks) ---
 function normalizeBase64url(b64) {
-  // accept JSON strings, PEMs, accidental quotes/spaces/newlines
   let s = String(b64 || '').trim();
 
-  // If someone returned raw text instead of JSON, it may include quotes; strip them.
+  // Strip accidental quotes
   if (s.startsWith('"') && s.endsWith('"')) s = s.slice(1, -1);
 
-  // Strip PEM armor if someone pasted a PEM by mistake
+  // Strip PEM armor if someone pasted a PEM
   if (s.includes('BEGIN PUBLIC KEY')) {
-    // Extract continuous base64 between PEM headers if present
     s = s.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
   }
 
@@ -31,7 +29,7 @@ function normalizeBase64url(b64) {
     } catch { /* ignore */ }
   }
 
-  // Remove whitespace and make sure it's base64url (URL safe) by replacing common errors
+  // Convert to URL-safe base64
   s = s.replace(/\s+/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 
   // Pad to multiple of 4
@@ -43,41 +41,47 @@ function normalizeBase64url(b64) {
 
 function urlBase64ToUint8ArraySafe(base64String) {
   const s = normalizeBase64url(base64String);
-  // Convert back to standard base64 for atob:
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
   let raw = '';
   try {
     raw = atob(b64);
-  } catch (e) {
+  } catch {
     throw new Error('Invalid VAPID public key: base64 decode failed');
   }
   const out = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-  // Web Push spec: uncompressed P-256 point = 65 bytes, first byte 0x04
+  // Must be uncompressed P-256 point: 65 bytes starting with 0x04
   if (out.length !== 65 || out[0] !== 0x04) {
     throw new Error(`Invalid VAPID public key: expected 65 bytes starting with 0x04, got ${out.length}`);
   }
   return out;
 }
 
+// --- Read once, decide JSON vs text after ---
+// Avoids "body is disturbed or locked" on Safari by never reading twice.
 async function fetchVapidPublicKey() {
-  const r = await fetch(`${API_BASE}/api/push/public-key`);
+  const r = await fetch(`${API_BASE}/api/push/public-key`, {
+    headers: { 'accept': 'application/json' },
+    cache: 'no-store',
+  });
   if (!r.ok) throw new Error('Could not fetch VAPID public key from server');
-  let key;
-  // Try JSON first
+
+  // Read ONCE
+  const raw = await r.text();
+  let key = '';
+  // Prefer JSON if parseable; otherwise use plain text
   try {
-    const j = await r.json();
+    const j = JSON.parse(raw);
     key = j.publicKey || j.key || '';
   } catch {
-    // If server returns text/plain for the key, accept it
-    key = await r.text();
+    key = raw;
   }
   key = (key || '').trim();
   if (!key) throw new Error('Server returned empty VAPID key');
   return key;
 }
 
-// --- iOS-first-run SW readiness (from our previous patch) ---
+// --- iOS-first-run SW readiness ---
 async function ensureActiveServiceWorker({ timeoutMs = 30000, allowOneReload = true } = {}) {
   if (!('serviceWorker' in navigator)) throw new Error('Service worker not supported');
 
@@ -123,7 +127,7 @@ async function ensureActiveServiceWorker({ timeoutMs = 30000, allowOneReload = t
       if (!sessionStorage.getItem('sw_reloaded_once')) {
         sessionStorage.setItem('sw_reloaded_once', '1');
         location.reload();
-        await new Promise(() => {});
+        await new Promise(() => {}); // halt until reload
       }
     }
     throw new Error('Service worker still starting up');
