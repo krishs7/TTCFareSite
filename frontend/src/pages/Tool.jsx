@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import { API_BASE } from '../apiBase.js';
 import { formatHMS } from '../time.js';
-import { ensurePushSubscription, scheduleReminders, isStandalonePWA } from '../push-client.js';
+import { startSmsVerification, verifySmsCode, scheduleSmsReminders, getSmsRecipientId } from '../sms-client.js';
+import { makeIcs, downloadIcs } from '../makeIcs.js';
 
 const Agencies = {
   TTC: 'TTC',
@@ -58,6 +59,70 @@ function Section({ title, children }) {
     </section>
   );
 }
+
+function SmsEnroll() {
+  const [phone, setPhone] = React.useState('');
+  const [code, setCode] = React.useState('');
+  const [phase, setPhase] = React.useState(() => (getSmsRecipientId() ? 'verified' : 'idle'));
+  const [msg, setMsg] = React.useState('');
+
+  const clean = s => s.replace(/[^\d+]/g, '');
+  const onStart = async () => {
+    setMsg('');
+    try {
+      await startSmsVerification(clean(phone));
+      setPhase('code');
+      setMsg('Code sent. Check your texts.');
+    } catch (e) {
+      setMsg(String(e.message || e));
+    }
+  };
+  const onVerify = async () => {
+    setMsg('');
+    try {
+      await verifySmsCode(clean(phone), code.trim());
+      setPhase('verified');
+      setMsg('Number verified ✅');
+    } catch (e) {
+      setMsg(String(e.message || e));
+    }
+  };
+
+  if (phase === 'verified') {
+    return <div className="text-green-700">SMS alerts enabled for this device.</div>;
+  }
+
+  return (
+    <div className="flex flex-col sm:flex-row gap-2 items-start">
+      {phase !== 'code' ? (
+        <>
+          <input
+            className="w-64 rounded-xl border border-slate-300 px-3 py-2"
+            placeholder="+16475551234"
+            value={phone}
+            onChange={e => setPhone(e.target.value)}
+            inputMode="tel"
+          />
+          <button className="btn btn-ghost" onClick={onStart}>Send code</button>
+        </>
+      ) : (
+        <>
+          <input
+            className="w-40 rounded-xl border border-slate-300 px-3 py-2"
+            placeholder="6-digit code"
+            value={code}
+            onChange={e => setCode(e.target.value)}
+            inputMode="numeric"
+            maxLength={6}
+          />
+          <button className="btn btn-ghost" onClick={onVerify}>Verify</button>
+        </>
+      )}
+      {msg && <div className="text-slate-600">{msg}</div>}
+    </div>
+  );
+}
+
 
 export default function Tool() {
   const [direction, setDirection] = useState(() => localStorage.getItem('dir') || Directions.TTC_GO);
@@ -117,11 +182,9 @@ export default function Tool() {
       scheduledRef.current = { five: false, one: false };
       try {
         if (r?.deadlineISO) {
-          const out = await scheduleReminders(r.deadlineISO);
-          if (!out?.ok && out?.reason === 'no-subscription') {
-            // user hasn’t enabled background reminders; do nothing
-          }
+          try { await scheduleSmsReminders(r.deadlineISO); } catch {}
         }
+
       } catch {}
     } catch (e) {
       if (import.meta.env.MODE !== 'test') console.error(e);
@@ -211,29 +274,38 @@ export default function Tool() {
             <span>minutes ago</span>
           </div>
         </Section>
-        <Section title="Background reminders (optional)">
-          <p className="mb-2 text-slate-600">
-            Enable push alerts so you’ll get the 5-minute and 1-minute reminders even if you leave the app.
-            { /iPhone|iPad|iPod/.test(navigator.userAgent) && !isStandalonePWA() && (
-              <span className="block mt-1">
-                On iPhone/iPad, first <strong>install</strong> the app (Share → Add to Home Screen), then press Enable.
-              </span>
-            )}
-          </p>
-          <button type="button"
-            className="btn btn-ghost"
-            onClick={async () => {
-              try {
-                await ensurePushSubscription();
-                alert('Background reminders enabled ✅');
-              } catch (e) {
-                alert(`Couldn’t enable: ${e.message || e}`);
-              }
-            }}
-          >
-            Enable background reminders
-          </button>
+        <Section title="Alerts (choose one)">
+          <div className="grid gap-4">
+            {/* SMS (optional; free while testing with a Twilio trial) */}
+            <div className="rounded-xl border border-slate-200 p-4">
+              <h3 className="font-semibold mb-2">Text alerts (SMS)</h3>
+              <p className="text-slate-600 mb-3">
+                Get T-5 and T-1 messages even if the app is closed. For now, SMS is available for your own verified number during testing.
+              </p>
+              <SmsEnroll />
+            </div>
+
+            {/* Always-free, production-safe */}
+            <div className="rounded-xl border border-slate-200 p-4">
+              <h3 className="font-semibold mb-2">Calendar alerts (free)</h3>
+              <p className="text-slate-600 mb-3">
+                Add an event with 5-minute and 1-minute reminders to your phone’s calendar.
+              </p>
+              <button
+                className="btn btn-ghost"
+                disabled={!result?.deadlineISO}
+                onClick={() => {
+                  if (!result?.deadlineISO) return;
+                  const ics = makeIcs(result.deadlineISO);
+                  downloadIcs('one-fare-reminder.ics', ics);
+                }}
+              >
+                Add calendar alerts
+              </button>
+            </div>
+          </div>
         </Section>
+
 
         <div className="flex gap-2 mb-4">
           <button className="btn btn-primary" onClick={onStartTap}>I just tapped</button>

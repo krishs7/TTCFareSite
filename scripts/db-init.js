@@ -28,7 +28,47 @@ async function main() {
     CREATE INDEX IF NOT EXISTS stops_name_trgm
       ON stops USING gin (name gin_trgm_ops);
   `);
+   
+  // --- SMS recipients managed via Email-to-SMS gateways ---
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS sms_recipients (
+      id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      phone_e164       TEXT UNIQUE NOT NULL,
+      carrier          TEXT NOT NULL, -- e.g., 'telus' | 'bell' | 'rogers' | 'freedom'
+      verified_at      TIMESTAMPTZ,
+      pending_code     TEXT,
+      pending_expires  TIMESTAMPTZ,
+      opt_out_at       TIMESTAMPTZ,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS sms_verified_idx
+      ON sms_recipients (phone_e164)
+      WHERE verified_at IS NOT NULL AND opt_out_at IS NULL;
+  `);
 
+  // --- SMS reminder jobs (email-to-sms) ---
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS sms_reminder_jobs (
+      id             BIGSERIAL PRIMARY KEY,
+      recipient_id   UUID NOT NULL REFERENCES sms_recipients(id) ON DELETE CASCADE,
+      fire_at        TIMESTAMPTZ NOT NULL,
+      kind           TEXT NOT NULL CHECK (kind IN ('T_MINUS_5','T_MINUS_1')),
+      body           TEXT NOT NULL,
+      url            TEXT,
+      sent_at        TIMESTAMPTZ,
+      failed_at      TIMESTAMPTZ,
+      error          TEXT
+    );
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS sms_reminder_due_idx
+      ON sms_reminder_jobs (fire_at)
+      WHERE sent_at IS NULL AND failed_at IS NULL;
+  `);
+  
+  
   // --- push_subscriptions ---
   await client.query(`
     CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -40,6 +80,7 @@ async function main() {
       created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
   await client.query(`ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS user_agent TEXT;`);
 
   // Ensure id has a DEFAULT (older DBs may have none)
