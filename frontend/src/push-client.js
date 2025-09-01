@@ -78,6 +78,9 @@ async function fetchVapidPublicKey() {
   }
   key = (key || '').trim();
   if (!key) throw new Error('Server returned empty VAPID key');
+  if (/^<!doctype html>/i.test(key) || key.startsWith('<html') || key.includes('<body')) {
+    throw new Error('Fetched HTML from /api/push/public-key — check API_BASE and CORS');
+  }
   return key;
 }
 
