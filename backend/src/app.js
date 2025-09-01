@@ -13,6 +13,15 @@ import jobsRoute from './routes/jobs.js';
 
 export const app = express();
 
+// Trust reverse proxies (e.g., ngrok) when opted in
+if (process.env.TRUST_PROXY) {
+  // true = trust all proxies; or set a number (e.g., 1) if you prefer
+  const val = process.env.TRUST_PROXY === 'true' ? true :
+              /^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) :
+              process.env.TRUST_PROXY;
+  app.set('trust proxy', val);
+}
+
 // Security / parsing
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(express.json());
