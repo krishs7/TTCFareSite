@@ -8,8 +8,17 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+       // make sure your own sw.js is used
+       strategies: 'injectManifest',
+       srcDir: '.',            // adjust if your sw.js is elsewhere
+       filename: 'sw.js',
+
       injectRegister: 'auto',
       registerType: 'autoUpdate',
+      workbox: {
+        // prevent any navigate fallback from touching /api/*
+        navigateFallbackDenylist: [/^\/api\//],
+      },
       includeAssets: ['favicon.svg', 'hero-toronto.svg', 'pwa-192.png', 'pwa-512.png'],
       manifest: {
         name: 'One-Fare Helper',
@@ -23,11 +32,6 @@ export default defineConfig({
           { src: 'pwa-512.png', sizes: '512x512', type: 'image/png' }
         ]
       },
-      // 👇 switch to injectManifest so we can add our push handlers
-      strategies: 'injectManifest',
-      srcDir: '.',
-      filename: 'sw.js',
-      devOptions: { enabled: true, type: 'module' }
     })
   ],
   //server: { port: 5173, proxy: { '/api': 'http://localhost:4000' } },

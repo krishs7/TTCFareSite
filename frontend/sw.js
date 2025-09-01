@@ -1,5 +1,5 @@
 // sw.js (Service Worker)
-
+const APP_VERSION = '2025-09-01-01';
 // Workbox precache
 import { precacheAndRoute } from 'workbox-precaching';
 self.__WB_DISABLE_DEV_LOGS = true;
