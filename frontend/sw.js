@@ -1,10 +1,17 @@
 // sw.js (Service Worker)
+
 // Workbox precache
 import { precacheAndRoute } from 'workbox-precaching';
 self.__WB_DISABLE_DEV_LOGS = true;
 precacheAndRoute(self.__WB_MANIFEST || []);
-self.skipWaiting();
-self.clientsClaim();
+
+// Ensure the new worker activates immediately and takes control of pages
+self.addEventListener('install', (event) => {
+  event.waitUntil(self.skipWaiting());            // activate this SW right away
+});
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());          // control all open clients in scope
+});
 
 // Handle incoming push (from our backend)
 self.addEventListener('push', (event) => {
