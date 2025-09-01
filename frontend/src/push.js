@@ -17,15 +17,16 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 export async function ensurePushSubscription() {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    throw new Error('Push not supported in this browser');
-  }
+  // Require a service worker; Push support is checked on the registration itself.
+  if (!('serviceWorker' in navigator)) throw new Error('Service worker not supported');
   const reg = await navigator.serviceWorker.ready;
   // Ask permission on user gesture only — you’ll call this from a button
   if (Notification.permission === 'default') {
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') throw new Error('Notifications denied');
   }
+  const hasPush = !!reg.pushManager && typeof reg.pushManager.subscribe === 'function';
+  if (!hasPush) throw new Error('Push not supported here');
   const applicationServerKey = urlBase64ToUint8Array(import.meta.env.VITE_VAPID_PUBLIC_KEY || '');
   const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
 
