@@ -15,14 +15,13 @@ export default function Install() {
 
         {installed ? (
           <div className="rounded-xl border border-green-200 bg-green-50 text-green-800 px-4 py-3 mb-6">
-            ✅ Already installed—open it from your home screen / launcher.
+            ✅ Already installed — open it from your home screen / launcher.
           </div>
         ) : canPrompt ? (
           <button
             className="btn btn-primary"
             onClick={async () => {
               const res = await promptInstall();
-              // Optional: toast UI could be added here based on res.outcome ('accepted' | 'dismissed')
               console.log('[PWA] install outcome:', res);
             }}
           >
@@ -31,27 +30,39 @@ export default function Install() {
         ) : (
           <div className="space-y-4">
             <p className="text-slate-700">
-              Your browser may show an install icon in the address bar.
-              If you don’t see it, follow the steps below:
+              If your browser doesn’t show an install icon, follow the steps below:
             </p>
 
-            {/* iOS Safari instructions */}
-            {(isIOS || isSafari) && (
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <h2 className="font-semibold mb-2">iOS (Safari)</h2>
-                <ol className="list-decimal pl-5 space-y-1 text-slate-700">
-                  <li>Tap the <strong>Share</strong> icon.</li>
-                  <li>Choose <strong>Add to Home Screen</strong>.</li>
-                  <li>Tap <strong>Add</strong>.</li>
-                </ol>
-              </div>
-            )}
+            {/* iPhone (Safari) instructions */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h2 className="font-semibold mb-2">iPhone (Safari or Chrome)</h2>
+              <ol className="list-decimal pl-5 space-y-1 text-slate-700">
+                <li>Open this site in <strong>Safari or Chrome</strong>.</li>
+                <li>Tap the <strong>Share</strong> icon (square with an up arrow).</li>
+                <li>Scroll and choose <strong>Add to Home Screen</strong>.</li>
+                <li>Tap <strong>Add</strong>.</li>
+              </ol>
+              <p className="mt-2 text-slate-500 text-sm">
+                Tip: On iOS, installation works best from Safari.
+              </p>
+            </div>
 
-            {/* Generic desktop instructions */}
+            {/* Android (Chrome) instructions */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h2 className="font-semibold mb-2">Android (Chrome)</h2>
+              <ol className="list-decimal pl-5 space-y-1 text-slate-700">
+                <li>Open this site in <strong>Chrome</strong>.</li>
+                <li>Tap the <strong>⋮</strong> menu (top-right).</li>
+                <li>Choose <strong>Add to Home screen</strong> (or <strong>Install app</strong>).</li>
+                <li>Confirm by tapping <strong>Add</strong> (or <strong>Install</strong>).</li>
+              </ol>
+            </div>
+
+            {/* Desktop fallback */}
             <div className="rounded-xl border border-slate-200 bg-white p-4">
               <h2 className="font-semibold mb-2">Desktop (Chrome / Edge)</h2>
               <ol className="list-decimal pl-5 space-y-1 text-slate-700">
-                <li>Look for the <strong>Install</strong> icon in the address bar (or 3-dot menu).</li>
+                <li>Look for the <strong>Install</strong> icon in the address bar (or the browser menu).</li>
                 <li>Click <strong>Install</strong>.</li>
               </ol>
             </div>

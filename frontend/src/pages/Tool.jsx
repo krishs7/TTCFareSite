@@ -302,38 +302,39 @@ export default function Tool() {
             <span>minutes ago</span>
           </div>
         </Section>
+
         <Section title="Alerts (choose one)">
           <div className="grid gap-4">
-            {/* SMS (optional; free while testing with a Twilio trial) */}
+            {/* SMS */}
             <div className="rounded-xl border border-slate-200 p-4">
               <h3 className="font-semibold mb-2">Text alerts (SMS)</h3>
               <p className="text-slate-600 mb-3">
-                Get T-5 and T-1 messages even if the app is closed. For now, SMS is available for your own verified number during testing.
+                Get T-5 and T-1 messages even if the app is closed.
               </p>
               <SmsEnroll />
             </div>
 
-            {/* Always-free, production-safe */}
+            {/* Calendar (coming soon) */}
             <div className="rounded-xl border border-slate-200 p-4">
-              <h3 className="font-semibold mb-2">Calendar alerts (free)</h3>
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="font-semibold">Calendar alerts (free)</h3>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">Coming soon</span>
+              </div>
               <p className="text-slate-600 mb-3">
                 Add an event with 5-minute and 1-minute reminders to your phone’s calendar.
               </p>
               <button
-                className="btn btn-ghost"
-                disabled={!result?.deadlineISO}
-                onClick={() => {
-                  if (!result?.deadlineISO) return;
-                  const ics = makeIcs(result.deadlineISO);
-                  downloadIcs('one-fare-reminder.ics', ics);
-                }}
+                className="btn btn-ghost opacity-50 cursor-not-allowed"
+                disabled
+                aria-disabled="true"
+                title="Coming soon"
+                onClick={(e) => e.preventDefault()}
               >
                 Add calendar alerts
               </button>
             </div>
           </div>
         </Section>
-
 
         <div className="flex gap-2 mb-4">
           <button className="btn btn-primary" onClick={onStartTap}>I just tapped</button>
