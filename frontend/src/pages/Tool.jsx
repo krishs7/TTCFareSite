@@ -62,12 +62,11 @@ function Section({ title, children }) {
 
 function SmsEnroll() {
   const [phone, setPhone] = React.useState('');
-  const [carrier, setCarrier] = React.useState('publicmobile'); // default for you
+  const [carrier, setCarrier] = React.useState('publicmobile');
   const [code, setCode] = React.useState('');
   const [phase, setPhase] = React.useState(() => (getSmsRecipientId() ? 'verified' : 'idle'));
   const [msg, setMsg] = React.useState('');
 
-  // Convert "6471234567" -> "+16471234567"; keep "+1..." as-is
   const toE164 = (s) => {
     const digits = String(s).replace(/\D/g, '');
     if (!digits) return '';
@@ -102,7 +101,7 @@ function SmsEnroll() {
   };
 
   if (phase === 'verified') {
-    return <div className="text-green-700">SMS alerts enabled for this device.</div>;
+    return <div className="text-green-600 dark:text-green-400">SMS alerts enabled for this device.</div>;
   }
 
   return (
@@ -111,14 +110,14 @@ function SmsEnroll() {
         {phase !== 'code' ? (
           <>
             <input
-              className="w-64 rounded-xl border border-slate-300 px-3 py-2"
+              className="w-64 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2"
               placeholder="+16475551234"
               value={phone}
               onChange={e => setPhone(e.target.value)}
               inputMode="tel"
             />
             <select
-              className="w-64 rounded-xl border border-slate-300 px-3 py-2"
+              className="w-64 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2"
               value={carrier}
               onChange={(e) => setCarrier(e.target.value)}
               aria-label="Carrier"
@@ -135,7 +134,7 @@ function SmsEnroll() {
         ) : (
           <>
             <input
-              className="w-40 rounded-xl border border-slate-300 px-3 py-2"
+              className="w-40 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2"
               placeholder="6-digit code"
               value={code}
               onChange={e => setCode(e.target.value)}
@@ -146,11 +145,10 @@ function SmsEnroll() {
           </>
         )}
       </div>
-      {msg && <div className="text-slate-600">{msg}</div>}
+      {msg && <div className="text-slate-600 dark:text-slate-300">{msg}</div>}
     </div>
   );
 }
-
 
 export default function Tool() {
   const [direction, setDirection] = useState(() => localStorage.getItem('dir') || Directions.TTC_GO);
@@ -212,7 +210,6 @@ export default function Tool() {
         if (r?.deadlineISO) {
           try { await scheduleSmsReminders(r.deadlineISO); } catch {}
         }
-
       } catch {}
     } catch (e) {
       if (import.meta.env.MODE !== 'test') console.error(e);
@@ -228,150 +225,152 @@ export default function Tool() {
   };
 
   return (
-    <div className="container-narrow py-8">
-      <div className="card p-6">
-        <header className="mb-4">
-          <h1 className="text-2xl font-bold">One-Fare Helper</h1>
-          <p className="text-slate-600">Quick timer + eligibility for TTC ⇄ GO/905 transfers.</p>
-        </header>
+    <div className="page">
+      <div className="container-narrow py-8">
+        <div className="card p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+          <header className="mb-4">
+            <h1 className="text-2xl font-bold">One-Fare Helper</h1>
+            <p className="text-slate-600 dark:text-slate-300">Quick timer + eligibility for TTC ⇄ GO/905 transfers.</p>
+          </header>
 
-        <Section title="Direction">
-          <div className="flex flex-wrap gap-2">
-            <button
-              className={`btn ${direction===Directions.TTC_GO?'btn-primary':'btn-ghost'}`}
-              onClick={() => { setDirection(Directions.TTC_GO); setStartAgency(Agencies.TTC); }}
-              aria-pressed={direction === Directions.TTC_GO}
-            >TTC → GO</button>
-            <button
-              className={`btn ${direction===Directions.GO_TTC?'btn-primary':'btn-ghost'}`}
-              onClick={() => { setDirection(Directions.GO_TTC); setStartAgency(Agencies.GO); }}
-              aria-pressed={direction === Directions.GO_TTC}
-            >GO → TTC</button>
-            <button
-              className={`btn ${direction===Directions.TTC_905?'btn-primary':'btn-ghost'}`}
-              onClick={() => { setDirection(Directions.TTC_905); setStartAgency(Agencies.TTC); }}
-              aria-pressed={direction === Directions.TTC_905}
-            >TTC ⇄ 905 Local</button>
-          </div>
-        </Section>
-
-        <div className="grid sm:grid-cols-2 gap-6">
-          <Section title="Starting agency">
-            <select
-              className="w-full rounded-xl border border-slate-300 px-3 py-2"
-              value={startAgency}
-              onChange={e => setStartAgency(e.target.value)}
-            >
-              {agenciesForDirection.map(a => <option key={a} value={a}>{a}</option>)}
-            </select>
-          </Section>
-
-          <Section title="Payment method">
-            <select
-              className="w-full rounded-xl border border-slate-300 px-3 py-2"
-              value={paymentMethod}
-              onChange={e => setPaymentMethod(e.target.value)}
-            >
-              <option value={PaymentMethods.PRESTO_CARD}>PRESTO Card</option>
-              <option value={PaymentMethods.PRESTO_GOOGLE_WALLET}>PRESTO in Google Wallet</option>
-              <option value={PaymentMethods.CREDIT}>Credit</option>
-              <option value={PaymentMethods.DEBIT}>Debit</option>
-              <option value={PaymentMethods.PRESTO_TICKET}>PRESTO Ticket (paper)</option>
-              <option value={PaymentMethods.E_TICKET}>E-ticket</option>
-            </select>
-          </Section>
-        </div>
-
-        <Section title="Same card across taps?">
-          <label className="inline-flex items-center gap-2">
-            <input type="checkbox" className="h-4 w-4" checked={sameCard} onChange={e => setSameCard(e.target.checked)} />
-            <span>Yes — I’ll use the same card/phone/watch for all taps</span>
-          </label>
-        </Section>
-
-        <Section title="Backdate (if you forgot)">
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min="0"
-              max="10"
-              value={backdateMin}
-              onChange={e => setBackdateMin(e.target.value)}
-              className="w-24 rounded-xl border border-slate-300 px-3 py-2"
-            />
-            <span>minutes ago</span>
-          </div>
-        </Section>
-
-        <Section title="Alerts (choose one)">
-          <div className="grid gap-4">
-            {/* SMS */}
-            <div className="rounded-xl border border-slate-200 p-4">
-              <h3 className="font-semibold mb-2">Text alerts (SMS)</h3>
-              <p className="text-slate-600 mb-3">
-                Get T-5 and T-1 messages even if the app is closed.
-              </p>
-              <SmsEnroll />
-            </div>
-
-            {/* Calendar (coming soon) */}
-            <div className="rounded-xl border border-slate-200 p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <h3 className="font-semibold">Calendar alerts (free)</h3>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">Coming soon</span>
-              </div>
-              <p className="text-slate-600 mb-3">
-                Add an event with 5-minute and 1-minute reminders to your phone’s calendar.
-              </p>
+          <Section title="Direction">
+            <div className="flex flex-wrap gap-2">
               <button
-                className="btn btn-ghost opacity-50 cursor-not-allowed"
-                disabled
-                aria-disabled="true"
-                title="Coming soon"
-                onClick={(e) => e.preventDefault()}
-              >
-                Add calendar alerts
-              </button>
-            </div>
-          </div>
-        </Section>
-
-        <div className="flex gap-2 mb-4">
-          <button className="btn btn-primary" onClick={onStartTap}>I just tapped</button>
-          {result && <button className="btn btn-ghost" onClick={reset}>Reset</button>}
-        </div>
-
-        {errorMsg && (
-          <div role="alert" className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-4">
-            {errorMsg}
-          </div>
-        )}
-
-        {result && (
-          <Section title="Status">
-            <div role="status" aria-live="polite" className="grid gap-2">
-              <p className="text-lg">
-                {result.eligibleNow ? '✅ Eligible'
-                  : (result.reasons.length ? '❌ Not eligible'
-                    : (expired ? '❌ Window expired' : '❌ Not eligible'))}
-              </p>
-              <p className="text-slate-700">{result.savingsText}</p>
-              <p>First tap: <strong>{firstTapISO ? dayjs(firstTapISO).format('MMM D, HH:mm:ss') : '-'}</strong></p>
-              <p>Tap-by deadline: <strong>{result.deadlineISO ? dayjs(result.deadlineISO).format('MMM D, HH:mm:ss') : '-'}</strong></p>
-              <p className="text-3xl">⏱️ {expired ? '00:00' : pretty}</p>
-              {!result.eligibleNow && result.reasons.length > 0 && (
-                <ul className="list-disc pl-5">{result.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
-              )}
-              {expired && result.expiredNextSteps && (
-                <p className="text-red-700">{result.expiredNextSteps}</p>
-              )}
+                className={`btn ${direction===Directions.TTC_GO?'btn-primary':'btn-ghost'}`}
+                onClick={() => { setDirection(Directions.TTC_GO); setStartAgency(Agencies.TTC); }}
+                aria-pressed={direction === Directions.TTC_GO}
+              >TTC → GO</button>
+              <button
+                className={`btn ${direction===Directions.GO_TTC?'btn-primary':'btn-ghost'}`}
+                onClick={() => { setDirection(Directions.GO_TTC); setStartAgency(Agencies.GO); }}
+                aria-pressed={direction === Directions.GO_TTC}
+              >GO → TTC</button>
+              <button
+                className={`btn ${direction===Directions.TTC_905?'btn-primary':'btn-ghost'}`}
+                onClick={() => { setDirection(Directions.TTC_905); setStartAgency(Agencies.TTC); }}
+                aria-pressed={direction === Directions.TTC_905}
+              >TTC ⇄ 905 Local</button>
             </div>
           </Section>
-        )}
 
-        <footer className="mt-4 text-slate-500 text-sm">
-          Runs entirely on your device. No PRESTO login or personal data required.
-        </footer>
+          <div className="grid sm:grid-cols-2 gap-6">
+            <Section title="Starting agency">
+              <select
+                className="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2"
+                value={startAgency}
+                onChange={e => setStartAgency(e.target.value)}
+              >
+                {agenciesForDirection.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </Section>
+
+            <Section title="Payment method">
+              <select
+                className="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2"
+                value={paymentMethod}
+                onChange={e => setPaymentMethod(e.target.value)}
+              >
+                <option value={PaymentMethods.PRESTO_CARD}>PRESTO Card</option>
+                <option value={PaymentMethods.PRESTO_GOOGLE_WALLET}>PRESTO in Google Wallet</option>
+                <option value={PaymentMethods.CREDIT}>Credit</option>
+                <option value={PaymentMethods.DEBIT}>Debit</option>
+                <option value={PaymentMethods.PRESTO_TICKET}>PRESTO Ticket (paper)</option>
+                <option value={PaymentMethods.E_TICKET}>E-ticket</option>
+              </select>
+            </Section>
+          </div>
+
+          <Section title="Same card across taps?">
+            <label className="inline-flex items-center gap-2">
+              <input type="checkbox" className="h-4 w-4" checked={sameCard} onChange={e => setSameCard(e.target.checked)} />
+              <span>Yes — I’ll use the same card/phone/watch for all taps</span>
+            </label>
+          </Section>
+
+          <Section title="Backdate (if you forgot)">
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="0"
+                max="10"
+                value={backdateMin}
+                onChange={e => setBackdateMin(e.target.value)}
+                className="w-24 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2"
+              />
+              <span>minutes ago</span>
+            </div>
+          </Section>
+
+          <Section title="Alerts (choose one)">
+            <div className="grid gap-4">
+              {/* SMS */}
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+                <h3 className="font-semibold mb-2">Text alerts (SMS)</h3>
+                <p className="text-slate-600 dark:text-slate-300 mb-3">
+                  Get T-5 and T-1 messages even if the app is closed.
+                </p>
+                <SmsEnroll />
+              </div>
+
+              {/* Calendar (coming soon) */}
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="font-semibold">Calendar alerts (free)</h3>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Coming soon</span>
+                </div>
+                <p className="text-slate-600 dark:text-slate-300 mb-3">
+                  Add an event with 5-minute and 1-minute reminders to your phone’s calendar.
+                </p>
+                <button
+                  className="btn btn-ghost opacity-50 cursor-not-allowed"
+                  disabled
+                  aria-disabled="true"
+                  title="Coming soon"
+                  onClick={(e) => e.preventDefault()}
+                >
+                  Add calendar alerts
+                </button>
+              </div>
+            </div>
+          </Section>
+
+          <div className="flex gap-2 mb-4">
+            <button className="btn btn-primary" onClick={onStartTap}>I just tapped</button>
+            {result && <button className="btn btn-ghost" onClick={reset}>Reset</button>}
+          </div>
+
+          {errorMsg && (
+            <div role="alert" className="text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-xl px-3 py-2 mb-4">
+              {errorMsg}
+            </div>
+          )}
+
+          {result && (
+            <Section title="Status">
+              <div role="status" aria-live="polite" className="grid gap-2">
+                <p className="text-lg">
+                  {result.eligibleNow ? '✅ Eligible'
+                    : (result.reasons.length ? '❌ Not eligible'
+                      : (expired ? '❌ Window expired' : '❌ Not eligible'))}
+                </p>
+                <p className="text-slate-700 dark:text-slate-200">{result.savingsText}</p>
+                <p>First tap: <strong>{firstTapISO ? dayjs(firstTapISO).format('MMM D, HH:mm:ss') : '-'}</strong></p>
+                <p>Tap-by deadline: <strong>{result.deadlineISO ? dayjs(result.deadlineISO).format('MMM D, HH:mm:ss') : '-'}</strong></p>
+                <p className="text-3xl">⏱️ {expired ? '00:00' : pretty}</p>
+                {!result.eligibleNow && result.reasons.length > 0 && (
+                  <ul className="list-disc pl-5">{result.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+                )}
+                {expired && result.expiredNextSteps && (
+                  <p className="text-red-700 dark:text-red-400">{result.expiredNextSteps}</p>
+                )}
+              </div>
+            </Section>
+          )}
+
+          <footer className="mt-4 text-slate-500 dark:text-slate-400 text-sm">
+            Runs entirely on your device. No PRESTO login or personal data required.
+          </footer>
+        </div>
       </div>
     </div>
   );

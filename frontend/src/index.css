@@ -1,7 +1,7 @@
-/* 1) Pull in Tailwind’s layers */
+/* Tailwind v4 base */
 @import "tailwindcss";
 
-/* 2) Your design tokens */
+/* Design tokens */
 @theme {
   --color-brand-50:  #eef6ff;
   --color-brand-100: #d9eaff;
@@ -14,28 +14,49 @@
   --color-brand-800: #183f8c;
   --color-brand-900: #142f63;
 
-  /* custom shadow token */
   --shadow-soft: 0 10px 30px -12px rgb(0 0 0 / 0.15);
 }
 
-/* 3) App-wide basics */
-html, body, #root { height: 100%; }
+/* Let the browser render native dark form controls/etc. */
+:root { color-scheme: light dark; }
 
-/* 4) Small component classes */
-@layer components {
-  .btn {
-    @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium transition-colors;
-  }
-  .btn-primary {
-    @apply bg-brand-500 text-white hover:bg-brand-600 active:bg-brand-700;
-  }
-  .btn-ghost {
-    @apply text-brand-700 hover:bg-brand-50;
-  }
-  .card {
-    box-shadow: var(--shadow-soft);
-    @apply rounded-2xl bg-white ring-1 ring-black/5;
-  }
-  .container-narrow { @apply max-w-5xl mx-auto px-4 sm:px-6; }
+/* ===== Root layout (prevents the light band) ===== */
+@layer base {
+  html, body, #root { height: 100%; }
+  /* dvh tracks the real viewport height on mobile to avoid gaps */
+  #root { min-height: 100dvh; display: flex; flex-direction: column; } /* sticky-footer pattern */
+  body { margin: 0; } /* remove UA 8px margin (the usual white strip) */
 }
+
+/* Small component classes */
+@layer components {
+  .btn { @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium transition-colors; }
+  .btn-primary { @apply bg-brand-500 text-white hover:bg-brand-600 active:bg-brand-700; }
+  .btn-ghost { @apply text-brand-700 hover:bg-brand-50; }
+  .card { box-shadow: var(--shadow-soft); @apply rounded-2xl bg-white ring-1 ring-black/5; }
+  .container-narrow { @apply max-w-5xl mx-auto px-4 sm:px-6; }
+
+  /* Page surface fills remaining space so the footer sits flush */
+  .page { @apply flex-1 bg-slate-50 text-slate-900; min-height: 0; }
+}
+
+/* Tailwind v4 selector-based dark mode */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Global light/dark surfaces */
+html, body, #root { background-color: #f8fafc; color: #0f172a; } /* slate-50 / slate-900 */
+@variant dark { html, body, #root { background-color: #020617 !important; color: #f1f5f9; } } /* slate-950 / slate-100 */
+
+/* Page wrapper in dark */
+@variant dark { .page { @apply bg-slate-950 text-slate-100; } }
+
+/* Dark-friendly tweaks */
+@variant dark {
+  .btn-ghost { @apply text-slate-200 hover:bg-slate-800; }
+  .card      { @apply bg-slate-900 ring-white/10; }
+}
+
+/* Hero gradient helper (no fade to white in dark) */
+.hero-gradient { @apply from-brand-50 to-white; }
+@variant dark { .hero-gradient { @apply from-slate-900 to-slate-950; } }
 
