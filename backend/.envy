@@ -1,0 +1,20 @@
+PORT=4000
+# Comma-separated origins in prod (e.g., https://your-frontend.vercel.app)
+CORS_ALLOWLIST=http://localhost:5173, http://localhost:4173, https://ttc-fare-site.vercel.app
+# Optional Postgres (Neon/Supabase/Render); if not set, /stops returns 501
+DATABASE_URL='postgresql://neondb_owner:npg_ujoKG3Zhk1md@ep-shy-art-adb2syks-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+
+
+# SMTP for outbound email (used to hit carrier Email->SMS gateways)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=elevateiqtutor@gmail.com
+SMTP_PASS=gfuabzkefmqngzos
+SMTP_FROM="One-Fare Alerts <youraddress@gmail.com>"
+
+# Optional: link to include in messages
+FRONTEND_ORIGIN=https://ttc-fare-site.vercel.app
+
+TRUST_PROXY=true
+SMS_TEST_API=true
