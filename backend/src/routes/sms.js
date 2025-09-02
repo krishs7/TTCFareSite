@@ -5,7 +5,7 @@ import { sendEmail } from '../email.js';
 
 const router = Router();
 
-const { FRONTEND_ORIGIN } = process.env;
+const { FRONTEND_ORIGIN, SMS_TEST_API } = process.env;
 
 // Minimal, Canada-focused gateway map (best-effort; carriers may limit/retire these)
 const GATEWAYS = {
@@ -154,6 +154,58 @@ router.post('/reminders', async (req, res) => {
   res.json({ ok: true, scheduled: [five, one] });
 });
 
-// (No inbound STOP via email-to-SMS; carriers vary and many don’t signal back)
+/**
+ * TEST-ONLY: POST /api/sms/reminders/test  { recipientId, offsetsSec: [180, 60] }
+ * Creates jobs that fire NOW()+offset seconds, but uses the permitted kinds
+ * 'T_MINUS_5' and 'T_MINUS_1' to satisfy the CHECK constraint.
+ * Enable with SMS_TEST_API=true in your backend .env
+ */
+router.post('/reminders/test', async (req, res) => {
+  if (SMS_TEST_API !== 'true') return res.status(404).end();
+
+  const pool = getPool();
+  if (!pool) return res.status(501).json({ error: 'DB not configured' });
+
+  const { recipientId, offsetsSec } = req.body || {};
+  if (!recipientId || !Array.isArray(offsetsSec) || offsetsSec.length === 0) {
+    return res.status(400).json({ error: 'recipientId and offsetsSec[] required' });
+  }
+
+  const ok = await pool.query(
+    `SELECT 1 FROM sms_recipients WHERE id=$1 AND verified_at IS NOT NULL AND opt_out_at IS NULL LIMIT 1`,
+    [recipientId]
+  );
+  if (!ok.rowCount) return res.status(400).json({ error: 'recipient not verified' });
+
+  const now = Date.now();
+
+  // Always use allowed kinds to satisfy CHECK constraint
+  // First offset -> 'T_MINUS_5', second (and any others) -> 'T_MINUS_1'
+  const rows = offsetsSec.map((s, i) => ({
+    fireAt: new Date(now + Number(s) * 1000),
+    kind: i === 0 ? 'T_MINUS_5' : 'T_MINUS_1',
+  }));
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const r of rows) {
+      await client.query(
+        `INSERT INTO sms_reminder_jobs (recipient_id, fire_at, kind, body, url)
+         VALUES ($1,$2,$3,$4,$5);`,
+        [recipientId, r.fireAt, r.kind, 'One-Fare (test): incoming shortly.', null]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+
+  res.json({ ok: true, scheduled: rows.map(r => r.fireAt) });
+});
+
 export default router;
 
