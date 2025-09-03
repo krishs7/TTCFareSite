@@ -40,7 +40,15 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Rate-limit the API
-app.use('/api/', rateLimit({ windowMs: 60 * 1000, max: 120 }));
+// NOTE: express-rate-limit warns when app.set('trust proxy', ...) is enabled
+// unless you explicitly acknowledge it. The validate override below keeps the
+// limiter happy while preserving your existing behavior.
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  validate: { trustProxy: false },
+});
+app.use('/api/', limiter);
 
 // Routes
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
