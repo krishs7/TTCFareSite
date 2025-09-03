@@ -28,9 +28,15 @@ function emailTo(phoneE164, carrierRaw) {
   return `${local10(phoneE164)}@${dom}`;
 }
 
-router.post('/run', async (_req, res) => {
+/**
+ * Run due SMS jobs once. Safe to call repeatedly.
+ * - Selects due jobs with SKIP LOCKED
+ * - Sends via email-to-SMS
+ * - Marks sent/failed
+ */
+export async function runDueSmsJobs(limit = 100) {
   const pool = getPool();
-  if (!pool) return res.status(501).json({ error: 'DB not configured' });
+  if (!pool) throw new Error('DB not configured');
 
   const client = await pool.connect();
   const sent = [];
@@ -47,7 +53,8 @@ router.post('/run', async (_req, res) => {
           AND j.fire_at <= NOW()
         ORDER BY j.fire_at ASC
         FOR UPDATE SKIP LOCKED
-        LIMIT 100`
+        LIMIT $1`,
+      [limit]
     );
 
     for (const job of jobs) {
@@ -56,7 +63,10 @@ router.post('/run', async (_req, res) => {
 
       try {
         await sendEmail(to, 'One-Fare', text);
-        await client.query(`UPDATE sms_reminder_jobs SET sent_at = NOW(), error = NULL WHERE id = $1`, [job.id]);
+        await client.query(
+          `UPDATE sms_reminder_jobs SET sent_at = NOW(), error = NULL WHERE id = $1`,
+          [job.id]
+        );
         sent.push(job.id);
       } catch (e) {
         await client.query(
@@ -69,12 +79,22 @@ router.post('/run', async (_req, res) => {
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK');
-    return res.status(500).json({ error: String(e) });
+    throw e;
   } finally {
     client.release();
   }
 
-  res.json({ ok: true, processed: sent.length, smsSent: sent });
+  return { processed: sent.length, ids: sent };
+}
+
+// --- HTTP endpoint (kept) ---
+router.post('/run', async (_req, res) => {
+  try {
+    const r = await runDueSmsJobs();
+    res.json({ ok: true, processed: r.processed, smsSent: r.ids });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
 });
 
 export default router;
