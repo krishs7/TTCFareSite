@@ -2,7 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import { API_BASE } from '../apiBase.js';
 import { formatHMS } from '../time.js';
-import { startSmsVerification, verifySmsCode, scheduleSmsReminders, getSmsRecipientId } from '../sms-client.js';
+import {
+  startSmsVerification,
+  verifySmsCode,
+  scheduleSmsReminders,
+  getSmsRecipientId,
+  clearSmsRecipientId
+} from '../sms-client.js';
 import { makeIcs, downloadIcs } from '../makeIcs.js';
 
 const Agencies = {
@@ -101,7 +107,23 @@ function SmsEnroll() {
   };
 
   if (phase === 'verified') {
-    return <div className="text-green-600 dark:text-green-400">SMS alerts enabled for this device.</div>;
+    return (
+      <div className="flex items-center gap-3 text-green-600 dark:text-green-400">
+        <span>SMS alerts enabled for this device.</span>
+        <button
+          className="btn btn-ghost"
+          onClick={() => {
+            clearSmsRecipientId();
+            setPhone('');
+            setCode('');
+            setPhase('idle');
+            setMsg('Re-enter your number to enable SMS here.');
+          }}
+        >
+          Change number
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -208,9 +230,12 @@ export default function Tool() {
       scheduledRef.current = { five: false, one: false };
       try {
         if (r?.deadlineISO) {
-          try { await scheduleSmsReminders(r.deadlineISO); } catch {}
+          await scheduleSmsReminders(r.deadlineISO);
         }
-      } catch {}
+      } catch (e) {
+        // If the stored recipientId doesn't match this server, show a clear prompt
+        setErrorMsg(String(e.message || e));
+      }
     } catch (e) {
       if (import.meta.env.MODE !== 'test') console.error(e);
       setErrorMsg(String(e.message || e));
