@@ -123,7 +123,13 @@ router.post('/reminders', async (req, res) => {
   const at5   = minus(5);
   const at1   = minus(1);
 
-  const url = FRONTEND_ORIGIN ? new URL('/tool', FRONTEND_ORIGIN).toString() : null;
+  // IMPORTANT: TELUS/Public Mobile often filter/drop messages containing URLs from email-to-SMS.
+  // Keep original behavior for other carriers, but omit the link for these carriers to ensure delivery.
+  const recipientCarrier = keyForCarrier(ok[0].carrier);
+  const linkAllowed = !['telus', 'publicmobile'].includes(recipientCarrier);
+  const url = (linkAllowed && FRONTEND_ORIGIN)
+    ? new URL('/tool', FRONTEND_ORIGIN).toString()
+    : null;
 
   await pool.query(
     `INSERT INTO sms_reminder_jobs (recipient_id, fire_at, kind, body, url)
