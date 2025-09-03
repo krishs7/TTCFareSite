@@ -32,6 +32,7 @@ export function clearSmsRecipientId() {
 async function parseOkOrThrow(res) {
   const text = await res.text(); // read exactly once
   if (!res.ok) {
+    // try to extract a small JSON error or fall back to text
     let msg = '';
     try { msg = JSON.parse(text)?.error; } catch {}
     throw new Error(msg || text || `HTTP ${res.status}`);
@@ -76,20 +77,21 @@ export async function verifySmsCode(phoneE164, code) {
   return id;
 }
 
-// Accept Date or string; always send a true ISO-8601 instant with timezone ("Z")
-export async function scheduleSmsReminders(deadline) {
+export async function scheduleSmsReminders(deadlineISO) {
   const recipientId = getSmsRecipientId();
   if (!recipientId) throw new Error('Please enable SMS alerts first.');
 
-  // Normalize to an absolute instant; avoids server parsing differences (UTC on Render)
-  const iso = (deadline instanceof Date)
-    ? deadline.toISOString()
-    : new Date(deadline).toISOString();
+  // Normalize to a canonical ISO string with timezone (Z) to avoid server parse surprises.
+  let normalized = deadlineISO;
+  try {
+    const d = new Date(deadlineISO);
+    if (!Number.isNaN(d.getTime())) normalized = d.toISOString();
+  } catch {}
 
   const res = await fetch(`${API_BASE}/api/sms/reminders`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ recipientId, deadlineISO: iso })
+    body: JSON.stringify({ recipientId, deadlineISO: normalized })
   });
 
   try {
@@ -97,6 +99,7 @@ export async function scheduleSmsReminders(deadline) {
     return true;
   } catch (e) {
     const msg = String(e.message || e);
+    // If this backend doesn't recognize the stored id, clear it and guide the user
     if (/recipient not verified/i.test(msg) || /unknown/i.test(msg)) {
       clearSmsRecipientId();
       throw new Error('For this server, please re-verify your number in “Text alerts (SMS)”.');
