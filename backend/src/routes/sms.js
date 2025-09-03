@@ -4,13 +4,13 @@ import { getPool } from '../db.js';
 import { sendEmail } from '../email.js';
 
 const router = Router();
-const { FRONTEND_ORIGIN, SMS_TEST_API } = process.env;
+const { SMS_TEST_API } = process.env;
 
 // Canada-focused gateways (best-effort; carriers may retire/filter)
 const GATEWAYS = {
   bell:          'txt.bell.ca',        // EOL Dec 31, 2025 (may degrade)
-  telus:         'msg.telus.com',      // URLs often stripped
-  publicmobile:  'msg.telus.com',      // rides TELUS
+  telus:         'msg.telus.com',      // URLs frequently filtered
+  publicmobile:  'msg.telus.com',      // same platform as TELUS
   rogers:        'pcs.rogers.com',
   freedom:       'txt.freedommobile.ca',
 };
@@ -115,35 +115,27 @@ router.post('/reminders', async (req, res) => {
   );
   if (!ok.length) return res.status(400).json({ error: 'recipient not verified' });
 
+  // Normalize and validate the deadline
   const dl = new Date(deadlineISO);
   if (isNaN(dl.getTime())) return res.status(400).json({ error: 'deadlineISO invalid' });
 
   const minus = (min) => new Date(dl.getTime() - min * 60 * 1000);
-  const at115 = minus(115); // NEW: T-1h55m (5 min after a 2h window starts)
+  const at115 = minus(115); // 1h55m before
   const at5   = minus(5);
   const at1   = minus(1);
 
-  // IMPORTANT: TELUS/Public Mobile often filter/drop messages containing URLs from email-to-SMS.
-  // Keep original behavior for other carriers, but omit the link for these carriers to ensure delivery.
-  const recipientCarrier = keyForCarrier(ok[0].carrier);
-  const linkAllowed = !['telus', 'publicmobile'].includes(recipientCarrier);
-  const url = (linkAllowed && FRONTEND_ORIGIN)
-    ? new URL('/tool', FRONTEND_ORIGIN).toString()
-    : null;
+  // Plain-text bodies (no links) for maximum deliverability
+  const body115 = 'One-Fare: 1h 55m remaining on your transfer window.';
+  const body5   = 'One-Fare: 5 minutes left. Keep your discount.';
+  const body1   = 'One-Fare: 1 minute left. Window expiring.';
 
   await pool.query(
     `INSERT INTO sms_reminder_jobs (recipient_id, fire_at, kind, body, url)
      VALUES
-       ($1, $2, 'T_MINUS_115', $3, $6),
-       ($1, $4, 'T_MINUS_5',   $5, $6),
-       ($1, $7, 'T_MINUS_1',   $8, $6);`,
-    [
-      recipientId,
-      at115, 'Just making sure you’re receiving reminders.',
-      at5,   'One-Fare: 5 minutes left. Tap soon to keep your discount.',
-      url,
-      at1,   'One-Fare: 1 minute left. Tap before your window expires.'
-    ]
+       ($1, $2, 'T_MINUS_115', $3, NULL),
+       ($1, $4, 'T_MINUS_5',   $5, NULL),
+       ($1, $6, 'T_MINUS_1',   $7, NULL);`,
+    [recipientId, at115, body115, at5, body5, at1, body1]
   );
 
   res.json({ ok: true, scheduled: [at115, at5, at1] });
@@ -151,7 +143,7 @@ router.post('/reminders', async (req, res) => {
 
 /**
  * TEST-ONLY: POST /api/sms/reminders/test  { recipientId, offsetsSec: [..] }
- * Keeps allowed kinds while letting you set tiny offsets for fast tests.
+ * Keeps allowed kinds while letting you set small offsets for fast tests.
  * Enable with SMS_TEST_API=true
  */
 router.post('/reminders/test', async (req, res) => {
@@ -171,7 +163,6 @@ router.post('/reminders/test', async (req, res) => {
   if (!ok.rowCount) return res.status(400).json({ error: 'recipient not verified' });
 
   const now = Date.now();
-  // Map first three offsets to the three allowed kinds: 115, 5, 1
   const kinds = ['T_MINUS_115', 'T_MINUS_5', 'T_MINUS_1'];
   const rows = offsetsSec.slice(0, 3).map((s, i) => ({
     fireAt: new Date(now + Number(s) * 1000),
@@ -185,7 +176,7 @@ router.post('/reminders/test', async (req, res) => {
       await client.query(
         `INSERT INTO sms_reminder_jobs (recipient_id, fire_at, kind, body, url)
          VALUES ($1,$2,$3,$4,$5);`,
-        [recipientId, r.fireAt, r.kind, 'One-Fare (test): incoming shortly.', null]
+        [recipientId, r.fireAt, r.kind, 'One-Fare (test): incoming shortly.', NULL]
       );
     }
     await client.query('COMMIT');
