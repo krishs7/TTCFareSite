@@ -7,3 +7,31 @@ app.listen(PORT, () => {
   console.log(`API listening on http://localhost:${PORT}`);
 });
 
+/**
+ * Optional in-process job loop (for Render web services).
+ * Set JOBS_LOOP=true in your environment to enable.
+ * This complements (or replaces) hitting /api/jobs/run from a cron.
+ */
+if (process.env.JOBS_LOOP === 'true') {
+  let running = false;
+
+  async function tick() {
+    if (running) return;
+    running = true;
+    try {
+      const r = await runDueSmsJobs();
+      if (r.processed > 0) {
+        console.log(`[jobs] sent ${r.processed} SMS job(s)`);
+      }
+    } catch (e) {
+      console.error('[jobs] loop error:', e);
+    } finally {
+      running = false;
+    }
+  }
+
+  // First tick shortly after boot, then every 60s
+  setTimeout(tick, 5000);
+  setInterval(tick, 60_000);
+}
+
