@@ -5,70 +5,76 @@ import { sendEmail } from '../email.js';
 
 const router = Router();
 
-// Minimal Canadian carrier map for Email->SMS gateways.
-// These are best-effort and may change or be rate-limited by carriers.
+// Same gateway map as sms.js
 const GATEWAYS = {
-  bell: 'txt.bell.ca',                 // Bell EOL Dec 31, 2025
-  telus: 'msg.telus.com',              // limited; URLs often stripped
-  rogers: 'pcs.rogers.com',
-  freedom: 'txt.freedommobile.ca',
-  // publicmobile rides on TELUS:
-  publicmobile: 'msg.telus.com',
+  bell:          'txt.bell.ca',
+  telus:         'msg.telus.com',
+  publicmobile:  'msg.telus.com',
+  rogers:        'pcs.rogers.com',
+  freedom:       'txt.freedommobile.ca',
 };
 
-function toLocal10FromE164(e164) {
-  // Remove +1 and any non-digits; keep last 10 digits as a safety.
-  const digits = (e164 || '').replace(/\D/g, '');
+function keyForCarrier(raw = '') {
+  return String(raw).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+function local10(phoneE164) {
+  const digits = (phoneE164 || '').replace(/\D/g, '');
   return digits.length > 10 ? digits.slice(-10) : digits;
+}
+function emailTo(phoneE164, carrierRaw) {
+  const key = keyForCarrier(carrierRaw);
+  const dom = GATEWAYS[key];
+  if (!dom) throw new Error(`Unsupported carrier: ${carrierRaw}`);
+  return `${local10(phoneE164)}@${dom}`;
 }
 
 router.post('/run', async (_req, res) => {
   const pool = getPool();
-  if (!pool) return res.status(501).json({ error: 'Jobs not configured (no DATABASE_URL).' });
+  if (!pool) return res.status(501).json({ error: 'DB not configured' });
 
+  const client = await pool.connect();
+  const sent = [];
   try {
-    // --- Email-to-SMS jobs only ---
-    const { rows: smsJobs } = await pool.query(`
-      SELECT j.id, j.kind, j.body, j.url, r.phone_e164, r.carrier
-        FROM sms_reminder_jobs j
-        JOIN sms_recipients r ON r.id = j.recipient_id
-       WHERE j.fire_at <= NOW()
-         AND j.sent_at IS NULL
-         AND j.failed_at IS NULL
-         AND r.verified_at IS NOT NULL
-         AND r.opt_out_at IS NULL
-       ORDER BY j.fire_at ASC
-       LIMIT 100;
-    `);
+    await client.query('BEGIN');
 
-    let smsSent = 0;
+    const { rows: jobs } = await client.query(
+      `SELECT j.id, j.recipient_id, j.body, j.url, j.kind,
+              r.phone_e164, r.carrier
+         FROM sms_reminder_jobs j
+         JOIN sms_recipients r ON r.id = j.recipient_id
+        WHERE j.sent_at IS NULL
+          AND j.failed_at IS NULL
+          AND j.fire_at <= NOW()
+        ORDER BY j.fire_at ASC
+        FOR UPDATE SKIP LOCKED
+        LIMIT 100`
+    );
 
-    for (const job of smsJobs) {
+    for (const job of jobs) {
+      const to = emailTo(job.phone_e164, job.carrier);
+      const text = job.url ? `${job.body} ${job.url}` : job.body;
+
       try {
-        const domain = GATEWAYS[job.carrier];
-        if (!domain) throw new Error(`unsupported carrier: ${job.carrier}`);
-
-        const local10 = toLocal10FromE164(job.phone_e164);
-        if (!/^\d{10}$/.test(local10)) throw new Error('invalid phone');
-
-        const to = `${local10}@${domain}`;
-        const text = job.url ? `${job.body} ${job.url}` : job.body;
-
         await sendEmail(to, 'One-Fare', text);
-        await pool.query(`UPDATE sms_reminder_jobs SET sent_at = NOW() WHERE id = $1`, [job.id]);
-        smsSent++;
+        await client.query(`UPDATE sms_reminder_jobs SET sent_at = NOW(), error = NULL WHERE id = $1`, [job.id]);
+        sent.push(job.id);
       } catch (e) {
-        await pool.query(
+        await client.query(
           `UPDATE sms_reminder_jobs SET failed_at = NOW(), error = $2 WHERE id = $1`,
           [job.id, String(e)]
         );
       }
     }
 
-    return res.json({ ok: true, processed: smsJobs.length, smsSent });
+    await client.query('COMMIT');
   } catch (e) {
-    return res.status(500).json({ error: String(e?.message || e) });
+    await client.query('ROLLBACK');
+    return res.status(500).json({ error: String(e) });
+  } finally {
+    client.release();
   }
+
+  res.json({ ok: true, processed: sent.length, smsSent: sent });
 });
 
 export default router;

@@ -4,43 +4,35 @@ import { getPool } from '../db.js';
 import { sendEmail } from '../email.js';
 
 const router = Router();
-
 const { FRONTEND_ORIGIN, SMS_TEST_API } = process.env;
 
-// Minimal, Canada-focused gateway map (best-effort; carriers may limit/retire these)
+// Canada-focused gateways (best-effort; carriers may retire/filter)
 const GATEWAYS = {
-  bell:          'txt.bell.ca',        // Bell EOL Dec 31, 2025
-  telus:         'msg.telus.com',      // limited; URLs often stripped
-  publicmobile:  'msg.telus.com',      // Public Mobile rides on TELUS
+  bell:          'txt.bell.ca',        // EOL Dec 31, 2025 (may degrade)
+  telus:         'msg.telus.com',      // URLs often stripped
+  publicmobile:  'msg.telus.com',      // rides TELUS
   rogers:        'pcs.rogers.com',
   freedom:       'txt.freedommobile.ca',
 };
 
 function keyForCarrier(raw = '') {
-  // "Public Mobile" -> "publicmobile"; "TELUS" -> "telus"
   return String(raw).toLowerCase().replace(/[^a-z0-9]/g, '');
 }
-
 function isE164(s = '') {
   return /^\+[1-9]\d{1,14}$/.test(s.trim());
 }
-
-// crude NANP: strip +1/non-digits and return last 10
 function local10(phoneE164) {
   const digits = (phoneE164 || '').replace(/\D/g, '');
   return digits.length > 10 ? digits.slice(-10) : digits;
 }
-
 function addrFor(phoneE164, carrierRaw) {
   const key = keyForCarrier(carrierRaw);
   const dom = GATEWAYS[key];
   if (!dom) throw new Error(`Unsupported carrier: ${carrierRaw}`);
   return `${local10(phoneE164)}@${dom}`;
 }
-
 async function sendSmsLike(phoneE164, carrierRaw, text) {
   const to = addrFor(phoneE164, carrierRaw);
-  // Subject often ignored by gateways; keep body short/plain
   return sendEmail(to, 'One-Fare', text);
 }
 
@@ -50,19 +42,14 @@ router.post('/start', async (req, res) => {
   if (!pool) return res.status(501).json({ error: 'DB not configured' });
 
   const { phone, carrier } = req.body || {};
-  if (!isE164(phone)) {
-    return res.status(400).json({ error: 'phone must be E.164 (e.g., +16475551234)' });
-  }
+  if (!isE164(phone)) return res.status(400).json({ error: 'phone must be E.164 (e.g., +16475551234)' });
 
   const key = keyForCarrier(carrier);
-  if (!GATEWAYS[key]) {
-    return res.status(400).json({ error: 'unsupported carrier' });
-  }
+  if (!GATEWAYS[key]) return res.status(400).json({ error: 'unsupported carrier' });
 
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const expires = new Date(Date.now() + 10 * 60 * 1000);
 
-  // Proper UPSERT: INSERT ... ON CONFLICT (phone_e164) DO UPDATE ...
   await pool.query(
     `INSERT INTO sms_recipients (phone_e164, carrier, pending_code, pending_expires, verified_at, opt_out_at)
      VALUES ($1, $2, $3, $4, NULL, NULL)
@@ -77,7 +64,6 @@ router.post('/start', async (req, res) => {
 
   const stop = 'Reply STOP to opt out (if supported by your carrier).';
   await sendSmsLike(phone, key, `One-Fare code: ${code}. Expires in 10 min. ${stop}`);
-
   res.json({ ok: true });
 });
 
@@ -119,7 +105,7 @@ router.post('/reminders', async (req, res) => {
   }
 
   const { rows: ok } = await pool.query(
-    `SELECT 1
+    `SELECT phone_e164, carrier
        FROM sms_recipients
       WHERE id = $1
         AND verified_at IS NOT NULL
@@ -132,39 +118,40 @@ router.post('/reminders', async (req, res) => {
   const dl = new Date(deadlineISO);
   if (isNaN(dl.getTime())) return res.status(400).json({ error: 'deadlineISO invalid' });
 
-  const five = new Date(dl.getTime() - 5 * 60 * 1000);
-  const one = new Date(dl.getTime() - 1 * 60 * 1000);
+  const minus = (min) => new Date(dl.getTime() - min * 60 * 1000);
+  const at115 = minus(115); // NEW: T-1h55m (5 min after a 2h window starts)
+  const at5   = minus(5);
+  const at1   = minus(1);
+
   const url = FRONTEND_ORIGIN ? new URL('/tool', FRONTEND_ORIGIN).toString() : null;
 
   await pool.query(
     `INSERT INTO sms_reminder_jobs (recipient_id, fire_at, kind, body, url)
      VALUES
-       ($1, $2, 'T_MINUS_5', $3, $5),
-       ($1, $4, 'T_MINUS_1', $6, $5);`,
+       ($1, $2, 'T_MINUS_115', $3, $6),
+       ($1, $4, 'T_MINUS_5',   $5, $6),
+       ($1, $7, 'T_MINUS_1',   $8, $6);`,
     [
       recipientId,
-      five,
-      'One-Fare: 5 minutes left. Tap soon to keep your discount.',
-      one,
+      at115, 'Just making sure you’re receiving reminders.',
+      at5,   'One-Fare: 5 minutes left. Tap soon to keep your discount.',
       url,
-      'One-Fare: 1 minute left. Tap before your window expires.',
+      at1,   'One-Fare: 1 minute left. Tap before your window expires.'
     ]
   );
 
-  res.json({ ok: true, scheduled: [five, one] });
+  res.json({ ok: true, scheduled: [at115, at5, at1] });
 });
 
 /**
- * TEST-ONLY: POST /api/sms/reminders/test  { recipientId, offsetsSec: [180, 60] }
- * Creates jobs that fire NOW()+offset seconds, but uses the permitted kinds
- * 'T_MINUS_5' and 'T_MINUS_1' to satisfy the CHECK constraint.
- * Enable with SMS_TEST_API=true in your backend .env
+ * TEST-ONLY: POST /api/sms/reminders/test  { recipientId, offsetsSec: [..] }
+ * Keeps allowed kinds while letting you set tiny offsets for fast tests.
+ * Enable with SMS_TEST_API=true
  */
 router.post('/reminders/test', async (req, res) => {
   if (SMS_TEST_API !== 'true') return res.status(404).end();
 
-  const pool = getPool();
-  if (!pool) return res.status(501).json({ error: 'DB not configured' });
+  const pool = getPool(); if (!pool) return res.status(501).json({ error: 'DB not configured' });
 
   const { recipientId, offsetsSec } = req.body || {};
   if (!recipientId || !Array.isArray(offsetsSec) || offsetsSec.length === 0) {
@@ -178,12 +165,11 @@ router.post('/reminders/test', async (req, res) => {
   if (!ok.rowCount) return res.status(400).json({ error: 'recipient not verified' });
 
   const now = Date.now();
-
-  // Always use allowed kinds to satisfy CHECK constraint
-  // First offset -> 'T_MINUS_5', second (and any others) -> 'T_MINUS_1'
-  const rows = offsetsSec.map((s, i) => ({
+  // Map first three offsets to the three allowed kinds: 115, 5, 1
+  const kinds = ['T_MINUS_115', 'T_MINUS_5', 'T_MINUS_1'];
+  const rows = offsetsSec.slice(0, 3).map((s, i) => ({
     fireAt: new Date(now + Number(s) * 1000),
-    kind: i === 0 ? 'T_MINUS_5' : 'T_MINUS_1',
+    kind: kinds[i] || 'T_MINUS_1'
   }));
 
   const client = await pool.connect();
@@ -198,8 +184,7 @@ router.post('/reminders/test', async (req, res) => {
     }
     await client.query('COMMIT');
   } catch (e) {
-    await client.query('ROLLBACK');
-    throw e;
+    await client.query('ROLLBACK'); throw e;
   } finally {
     client.release();
   }
