@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-API="${API:-https://31ccfbdcb484.ngrok-free.app}"
+API="${API:-https://ttcfaresite.onrender.com}"
 RID="${RID:-$(cat .sms_id)}"
 OFFSETS="${OFFSETS:-[180,60]}"   # 3 minutes and 1 minute from now
 POLL_SECS="${POLL_SECS:-20}"     # how often to hit jobs/run

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-API="${API:-https://31ccfbdcb484.ngrok-free.app}"
+API="${API:-https://ttcfaresite.onrender.com}"
 PHONE="${PHONE:-+16475724372}"
 CARRIER="${CARRIER:-publicmobile}"
 
