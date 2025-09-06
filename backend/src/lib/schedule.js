@@ -1,67 +1,53 @@
 // backend/src/lib/schedule.js
-import { getPool } from '../db.js';
+// Wraps the TTC zero-DB schedule loader & adds helper to get lines-at-stop.
+import {
+  loadTtcGtfsFromUrl,
+  ttcNextArrivalsFromSchedule,
+  expandStopIdsStationAware,
+  ttcLinesAtStopInWindow,
+} from './gtfsZipSchedule.js';
 
-export async function nextArrivalsFromSchedule(agencyKey, stopId, { limit = 3 } = {}) {
-  const pool = getPool();
-  if (!pool) return [];
+let loadOncePromise = null;
 
-  // Requires tables: calendar, calendar_dates, trips, stop_times
-  // Quick filter for services active today
-  const { rows: r } = await pool.query(`
-    WITH today AS (
-      SELECT
-        to_char(current_date, 'D')::int AS dow, -- 1..7 (Sun=1)
-        current_date::date AS d
-    ),
-    active_services AS (
-      SELECT c.service_id
-      FROM calendar c, today t
-      WHERE t.d BETWEEN c.start_date AND c.end_date
-        AND CASE t.dow
-              WHEN 1 THEN c.sunday
-              WHEN 2 THEN c.monday
-              WHEN 3 THEN c.tuesday
-              WHEN 4 THEN c.wednesday
-              WHEN 5 THEN c.thursday
-              WHEN 6 THEN c.friday
-              WHEN 7 THEN c.saturday
-            END = 1
-      UNION
-      SELECT cd.service_id
-      FROM calendar_dates cd, today t
-      WHERE cd.date = t.d AND cd.exception_type = 1
-      EXCEPT
-      SELECT cd.service_id
-      FROM calendar_dates cd, today t
-      WHERE cd.date = t.d AND cd.exception_type = 2
-    ),
-    upcoming AS (
-      SELECT st.trip_id, st.arrival_time, st.departure_time
-      FROM stop_times st
-      JOIN trips tr ON tr.trip_id = st.trip_id
-      WHERE tr.agency = $1
-        AND st.stop_id = $2
-        AND tr.service_id IN (SELECT service_id FROM active_services)
-        AND (st.arrival_time >= (extract(epoch from now()) - date_trunc('day', now())::timestamp AT TIME ZONE 'UTC') OR
-             st.departure_time >= (extract(epoch from now()) - date_trunc('day', now())::timestamp AT TIME ZONE 'UTC'))
-    )
-    SELECT u.trip_id,
-           u.arrival_time, u.departure_time,
-           tr.route_id, tr.trip_headsign
-    FROM upcoming u
-    JOIN trips tr ON tr.trip_id = u.trip_id
-    ORDER BY COALESCE(u.arrival_time, u.departure_time)
-    LIMIT $3
-  `, [agencyKey.toUpperCase(), String(stopId), limit]);
+const DEFAULT_TTC_GTFS =
+  process.env.TTC_GTFS_ZIP_URL ||
+  // Current TTC static GTFS (Open Data Toronto CKAN resource). You can pin via env.
+  'https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/7795b45e-e65a-4465-81fc-c36b9dfff169/resource/cfb6b2b8-6191-41e3-bda1-b175c51148cb/download/TTC Routes and Schedules Data.zip';
 
-  const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
-  const toIso = (sec) => new Date(startOfDay.getTime() + (Number(sec) * 1000)).toISOString();
+async function ensureLoaded() {
+  if (!loadOncePromise) {
+    loadOncePromise = (async () => {
+      try {
+        await loadTtcGtfsFromUrl(DEFAULT_TTC_GTFS);
+        console.log('[GTFS] TTC zip loaded for schedule fallback');
+      } catch (e) {
+        console.error('[GTFS] TTC zip load failed:', e?.message || e);
+      }
+    })();
+  }
+  return loadOncePromise;
+}
 
-  return r.map(row => ({
-    when: toIso(row.arrival_time ?? row.departure_time),
-    realtime: false,
-    routeShortName: row.route_id,
-    headsign: row.trip_headsign || '',
-  }));
+export async function nextArrivalsFromSchedule(agencyKey, stopId, opts = {}) {
+  const ag = String(agencyKey || '').toLowerCase();
+  if (ag !== 'ttc') return [];
+  await ensureLoaded();
+  return ttcNextArrivalsFromSchedule(stopId, opts);
+}
+
+// Return station-aware expansion of a base stop id (TTC only).
+export async function expandStopIdsIfStation(agencyKey, stopId) {
+  const ag = String(agencyKey || '').toLowerCase();
+  if (ag !== 'ttc') return [String(stopId)];
+  await ensureLoaded();
+  return expandStopIdsStationAware(stopId);
+}
+
+// Compute distinct line short names serving stop within window (TTC only).
+export async function linesAtStopWindow(agencyKey, stopId, { windowMin = 60 } = {}) {
+  const ag = String(agencyKey || '').toLowerCase();
+  if (ag !== 'ttc') return [];
+  await ensureLoaded();
+  return ttcLinesAtStopInWindow(stopId, { windowMin });
 }
 

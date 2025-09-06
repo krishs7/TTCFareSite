@@ -1,6 +1,7 @@
 // backend/src/lib/adapters/ttc.js
 import { fetchRT, arrivalsFromTripUpdates, alertsFromFeed } from './base.js';
 
+// Public Bustime GTFS-RT endpoints
 const urls = {
   vehicles: process.env.TTC_RT_VEHICLES || 'https://bustime.ttc.ca/gtfsrt/vehicles',
   trips:    process.env.TTC_RT_TRIPS    || 'https://bustime.ttc.ca/gtfsrt/trips',
@@ -8,9 +9,10 @@ const urls = {
 };
 
 export const ttc = {
-  async nextArrivalsByStop(stopId, { limit = 3 } = {}) {
+  async nextArrivalsByStop(stopId, opts = {}) {
     const feed = await fetchRT(urls.trips);
-    return arrivalsFromTripUpdates(feed, stopId, { limit });
+    // TTC stop_id in TripUpdates == GTFS stop_id → strict match (default)
+    return arrivalsFromTripUpdates(feed, stopId, { ...opts });
   },
   async alerts(routeRef) {
     const feed = await fetchRT(urls.alerts);

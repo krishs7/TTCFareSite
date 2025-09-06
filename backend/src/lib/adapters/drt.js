@@ -1,4 +1,3 @@
-// backend/src/lib/adapters/drt.js
 import { fetchRT, arrivalsFromTripUpdates, alertsFromFeed } from './base.js';
 
 const urls = {
@@ -8,9 +7,9 @@ const urls = {
 };
 
 export const drt = {
-  async nextArrivalsByStop(stopId, { limit = 3 } = {}) {
+  async nextArrivalsByStop(stopId, opts = {}) {
     const feed = await fetchRT(urls.trips);
-    return arrivalsFromTripUpdates(feed, stopId, { limit });
+    return arrivalsFromTripUpdates(feed, stopId, opts);
   },
   async alerts(routeRef) {
     const feed = await fetchRT(urls.alerts);

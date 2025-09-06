@@ -1,10 +1,8 @@
 // backend/src/lib/adapters/base.js
 
-// CJS package → import default, then grab transit_realtime namespace
 import GtfsRT from 'gtfs-realtime-bindings';
 const TransitRealtime = GtfsRT.transit_realtime;
 
-// Use Node’s built-in fetch (Node 18+)
 export async function fetchRT(url, { timeoutMs = 8000 } = {}) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeoutMs);
@@ -18,23 +16,67 @@ export async function fetchRT(url, { timeoutMs = 8000 } = {}) {
   }
 }
 
-// Common: extract arrivals at a given stopId from a TripUpdates feed
-export function arrivalsFromTripUpdates(feed, stopId, { limit = 3 } = {}) {
+// ---------- normalization ----------
+function stripNonAlnum(s) {
+  return String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+function normalizeRouteKey(s) {
+  const x = stripNonAlnum(s);
+  return x.replace(/^0+/, '');
+}
+function routeMatches(feedRouteId, requested) {
+  if (!requested) return true;
+  const a = normalizeRouteKey(feedRouteId);
+  const b = normalizeRouteKey(requested);
+  if (!b) return true;
+  if (a === b) return true;
+  return a.startsWith(b) || b.startsWith(a);
+}
+
+// Default: strict equality (case-insensitive) to avoid cross-stop leakage
+function defaultStopMatcher(rtStopId, wantedStopId) {
+  return String(rtStopId).toLowerCase() === String(wantedStopId).toLowerCase();
+}
+
+// Brampton: tolerate prefixes/suffixes (e.g., agency prefixes)
+export function looseStopMatcher(rtStopId, wantedStopId) {
+  const a = stripNonAlnum(rtStopId);
+  const b = stripNonAlnum(wantedStopId);
+  return a === b || a.endsWith(b) || b.endsWith(a);
+}
+
+/**
+ * Extract arrivals at a given stopId from TripUpdates.
+ * You can pass a custom stopIdMatcher; otherwise strict match is used.
+ */
+export function arrivalsFromTripUpdates(
+  feed,
+  stopId,
+  { limit = 10, routeRef, fromEpochSec, stopIdMatcher } = {}
+) {
   const now = Math.floor(Date.now() / 1000);
+  const minTs = Number.isFinite(fromEpochSec) ? fromEpochSec : now;
+  const matchStop = stopIdMatcher || defaultStopMatcher;
+
   const out = [];
   for (const ent of feed.entity || []) {
     const tu = ent.tripUpdate;
     if (!tu) continue;
     const trip = tu.trip || {};
+    const rtRoute = (trip.routeId ?? '').toString();
+
+    if (routeRef && !routeMatches(rtRoute, routeRef)) continue;
+
     for (const stu of tu.stopTimeUpdate || []) {
-      if (String(stu.stopId) !== String(stopId)) continue;
+      if (!matchStop(stu.stopId, stopId)) continue;
       const t = Number(stu.arrival?.time || stu.departure?.time);
-      if (!Number.isFinite(t) || t < now) continue;
+      if (!Number.isFinite(t) || t < minTs) continue;
+
       out.push({
         when: new Date(t * 1000).toISOString(),
         realtime: true,
-        routeShortName: trip.routeId || '',
-        headsign: tu.stopTimeUpdate?.[0]?.stopHeadsign || trip.tripId || '',
+        routeShortName: rtRoute || '',
+        headsign: stu.stopHeadsign || trip.tripId || '',
         vehicleId: tu.vehicle?.id || undefined,
       });
     }
@@ -43,14 +85,18 @@ export function arrivalsFromTripUpdates(feed, stopId, { limit = 3 } = {}) {
   return out.slice(0, limit);
 }
 
-// Alerts helper (maps agency-agnostic fields)
+// Alerts helper
 export function alertsFromFeed(feed, { routeRef } = {}) {
+  const routeKey = normalizeRouteKey(routeRef);
   const items = [];
   for (const ent of feed.entity || []) {
     const a = ent.alert;
     if (!a) continue;
     const informed = (a.informedEntity || []).map(e => e.routeId).filter(Boolean);
-    if (routeRef && !informed.includes(routeRef)) continue;
+    if (routeKey) {
+      const has = informed.some(r => routeMatches(r, routeKey));
+      if (!has) continue;
+    }
     items.push({
       id: ent.id,
       headerText: a.headerText?.translation?.[0]?.text || '',

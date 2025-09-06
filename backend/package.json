@@ -21,6 +21,7 @@
   "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
+    "csv-parse": "^6.1.0",
     "dayjs": "^1.11.17",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
@@ -28,6 +29,7 @@
     "fast-csv": "^5.0.5",
     "gtfs-realtime-bindings": "^1.1.1",
     "helmet": "^8.1.0",
+    "luxon": "^3.7.2",
     "morgan": "^1.10.1",
     "nodemailer": "^7.0.6",
     "pg": "^8.16.3",
