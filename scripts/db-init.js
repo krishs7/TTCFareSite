@@ -11,8 +11,8 @@ async function main() {
   await client.connect();
 
   // Extensions (Neon supports these)
-  await client.query(`CREATE EXTENSION IF NOT EXISTS pg_trgm;`);
-  await client.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`); // gen_random_uuid()
+  try { await client.query(`CREATE EXTENSION IF NOT EXISTS pg_trgm;`); } catch {}
+  try { await client.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`); } catch {}
 
   // --- stops (unchanged) ---
   await client.query(`

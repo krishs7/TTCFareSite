@@ -28,20 +28,24 @@ if (!zipPath || !fs.existsSync(zipPath)) {
 
 const ddl = `
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE TABLE IF NOT EXISTS stops (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  lat DOUBLE PRECISION NOT NULL,
-  lon DOUBLE PRECISION NOT NULL,
-  agency TEXT NOT NULL
+  stop_id        TEXT PRIMARY KEY,
+  name           TEXT NOT NULL,
+  lat            DOUBLE PRECISION NOT NULL,
+  lon            DOUBLE PRECISION NOT NULL,
+  agency         TEXT NOT NULL,
+  location_type  INTEGER,          -- 1=station, 0=stop, others per GTFS
+  parent_station TEXT              -- nullable
 );
+
 CREATE INDEX IF NOT EXISTS stops_name_idx ON stops (name);
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname='pg_trgm') THEN
     CREATE INDEX IF NOT EXISTS stops_name_trgm_idx ON stops USING gin (name gin_trgm_ops);
   END IF;
-END$$;`;
+END$$;
 
 async function importStops() {
   const pool = new Pool({ connectionString: DATABASE_URL, max: 3 });
@@ -67,20 +71,28 @@ async function importStops() {
             const name = row.stop_name?.toString();
             const lat = Number(row.stop_lat);
             const lon = Number(row.stop_lon);
+            const location_type = Number(row.location_type || '0');
+            const parent_station = row.parent_station ? row.parent_station.toString() : null;
+
             if (id && name && Number.isFinite(lat) && Number.isFinite(lon)) {
-              rows.push({ id, name, lat, lon });
+              rows.push({ id, name, lat, lon, location_type, parent_station });
             }
           })
           .on('end', async () => {
             const client2 = await pool.connect();
             try {
               await client2.query('BEGIN');
-              const text = `INSERT INTO stops (id, name, lat, lon, agency)
-                            VALUES ($1,$2,$3,$4,$5)
-                            ON CONFLICT (id) DO UPDATE
-                            SET name=EXCLUDED.name, lat=EXCLUDED.lat, lon=EXCLUDED.lon, agency=EXCLUDED.agency`;
+              const text = `INSERT INTO stops (stop_id, name, lat, lon, agency, location_type, parent_station)
+                            VALUES ($1,$2,$3,$4,$5,$6,$7)
+                            ON CONFLICT (stop_id) DO UPDATE
+                            SET name=EXCLUDED.name,
+                              lat=EXCLUDED.lat,
+                              lon=EXCLUDED.lon,
+                              agency=EXCLUDED.agency,
+                              location_type=EXCLUDED.location_type,
+                              parent_station=EXCLUDED.parent_station `;
               for (const r of rows) {
-                await client2.query(text, [r.id, r.name, r.lat, r.lon, agency]);
+                await client2.query(text, [r.id, r.name, r.lat, r.lon, agency, r.location_type, r.parent_station]);
               }
               await client2.query('COMMIT');
               count += rows.length;
