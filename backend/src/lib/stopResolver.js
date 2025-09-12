@@ -2,59 +2,36 @@
 import { getPool } from '../db.js';
 
 /**
- * If stopRef looks like an exact id (digits/alnum), return it directly.
- * Otherwise, try to find a matching stop_id by name (returns the first best match).
+ * If the user typed a raw id-ish token (digits / letters / _ -), trust it.
  */
 export async function getStopId(agencyKey, stopRef) {
   if (!stopRef) return null;
   const s = String(stopRef).trim();
 
-  // Basic "it looks like an id" heuristic
+  // Looks like a stop_id already? Just pass it through.
   if (/^[A-Za-z0-9_-]+$/.test(s)) return s;
 
   const pool = getPool();
   if (!pool) return null;
 
-  const { rows } = await pool.query(
-    `
-    SELECT id
-    FROM stops
-    WHERE agency = $1 AND name ILIKE $2
-    ORDER BY name ASC
-    LIMIT 1
-    `,
-    [String(agencyKey).toUpperCase(), `%${s}%`]
-  );
-  return rows[0]?.id || null;
+  const ag = String(agencyKey || '').toUpperCase();
+  const candidates = await findCandidateStopIds(agencyKey, s, 8);
+
+  // Prefer platform-y rows if the query mentions "station"
+  const wantsStationish = /\bstation\b/i.test(s);
+  if (candidates.length) {
+    if (wantsStationish) {
+      candidates.sort(scoreStationQuery);
+      return candidates[0].id;
+    }
+    return candidates[0].id;
+  }
+  return null;
 }
 
 /**
- * Tokenize the free-text stop name to help disambiguate.
- * We look for "station/stn/subway", "go", "terminal/loop", and street-type tokens.
- */
-function extractTokens(q) {
-  const t = String(q || '').toLowerCase();
-  const has = (re) => re.test(t);
-  return {
-    station: has(/\b(station|stn|subway)\b/),
-    go: has(/\bgo\b/),
-    terminal: has(/\b(terminal|loop|exchange)\b/),
-    street: has(/\b(st|street|rd|road|ave|avenue|blvd|boulevard|dr|drive|ct|court|cres|crescent)\b/),
-  };
-}
-
-function nameHasAnyToken(name, tok) {
-  const s = String(name || '').toLowerCase();
-  if (tok.station && /\b(station|stn|subway)\b/.test(s)) return true;
-  if (tok.go && /\bgo\b/.test(s)) return true;
-  if (tok.terminal && /\b(terminal|loop|exchange)\b/.test(s)) return true;
-  if (tok.street && /\b(st|street|rd|road|ave|avenue|blvd|boulevard|dr|drive|ct|court|cres|crescent)\b/.test(s)) return true;
-  return false;
-}
-
-/**
- * Return up to `max` candidate stop_ids matching the name for this agency.
- * Applies token-aware filtering so "Warden Station" does not match "Warden Ave".
+ * Return up to `max` candidate stop_ids by name for this agency.
+ * Token-aware filter so "Warden Station" won’t match "Warden Ave".
  */
 export async function findCandidateStopIds(agencyKey, nameLike, max = 12) {
   const q = String(nameLike || '').trim();
@@ -63,43 +40,58 @@ export async function findCandidateStopIds(agencyKey, nameLike, max = 12) {
   const pool = getPool();
   if (!pool) return [];
 
-  const sql = `
-    SELECT id, name
-    FROM stops
-    WHERE agency = $1 AND name ILIKE $2
-    ORDER BY name ASC
-    LIMIT $3
-  `;
-  const { rows } = await pool.query(sql, [
-    String(agencyKey).toUpperCase(),
-    `%${q}%`,
-    Math.max(1, Math.min(50, max)),
-  ]);
+  const ag = String(agencyKey || '').toUpperCase();
 
-  if (!rows?.length) return [];
+  // Pull a generous set and score in JS for token quality
+  const { rows } = await pool.query(
+    `SELECT id, name, coalesce(location_type,0) AS location_type
+     FROM stops
+     WHERE agency=$1 AND name ILIKE $2
+     LIMIT 200`,
+    [ag, `%${q}%`]
+  );
 
-  // Apply token filters only if the query clearly indicates a type
-  const tok = extractTokens(q);
-  const wantsType =
-    tok.station || tok.go || tok.terminal || tok.street;
+  // Basic token-aware filtering
+  const tokens = q
+    .toLowerCase()
+    .replace(/[–—-]/g, ' ')   // normalize dashes
+    .replace(/\bstn\b/gi, 'station')
+    .split(/\s+/)
+    .filter(Boolean);
 
-  let filtered = rows;
-  if (wantsType) {
-    const f = rows.filter(r => nameHasAnyToken(r.name, tok));
-    if (f.length) filtered = f;
-  }
-
-  // Final pass: prioritize those with all query words present (loose)
-  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-  filtered.sort((a, b) => {
-    const as = a.name.toLowerCase();
-    const bs = b.name.toLowerCase();
-    const ac = words.reduce((n,w)=> n + (as.includes(w)?1:0), 0);
-    const bc = words.reduce((n,w)=> n + (bs.includes(w)?1:0), 0);
-    if (ac !== bc) return bc - ac;
-    return String(a.name).localeCompare(String(b.name));
+  const filtered = rows.filter(r => {
+    const n = String(r.name || '').toLowerCase();
+    return tokens.every(t => n.includes(t));
   });
 
-  return filtered.map(r => ({ id: r.id, name: r.name }));
+  // Prefer “Platform / Eastbound / Westbound” when the query mentions Station,
+  // because TTC platform rows carry stop_times; plain “Station” often does not.
+  const wantsStationish = tokens.includes('station');
+  const scored = filtered
+    .map(r => ({ ...r, _score: wantsStationish ? stationScore(r) : defaultScore(r, q) }))
+    .sort((a, b) => b._score - a._score || String(a.name).localeCompare(String(b.name)));
+
+  return scored.slice(0, max).map(r => ({ id: String(r.id), name: String(r.name) }));
 }
+
+// ---------- scoring helpers ----------
+function stationScore(r) {
+  const name = String(r.name || '').toLowerCase();
+  let s = 0;
+  if (/\bplatform\b/.test(name)) s += 5;
+  if (/\b(east|west|north|south)bound\b/.test(name)) s += 3;
+  if (/\bplatform\b/.test(name) && /\b(east|west)bound\b/.test(name)) s += 2;
+  // nudge non-station rows (GTFS location_type=1 is station)
+  if (Number(r.location_type) !== 1) s += 1;
+  return s;
+}
+function defaultScore(r, q) {
+  const name = String(r.name || '');
+  // simple closeness: shorter and starts-with get a nudge
+  let s = 0;
+  if (name.toLowerCase().startsWith(q.toLowerCase())) s += 2;
+  s += Math.max(0, 40 - Math.abs(name.length - q.length)) / 40;
+  return s;
+}
+function scoreStationQuery(a, b) { return stationScore(b) - stationScore(a); }
 
