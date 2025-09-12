@@ -1,24 +1,27 @@
 // backend/src/lib/schedule.js
-// Chooses DB-backed schedule when USE_DB_SCHEDULE=1, otherwise the zero-DB ZIP loader.
+// Chooses DB-backed schedule when USE_DB_SCHEDULE=1, otherwise the zero-DB ZIP loader (dev).
+
+import * as dbSched from './scheduleDb.js';
+import {
+  loadTtcGtfsFromUrl,
+  ttcNextArrivalsFromSchedule,
+  expandStopIdsStationAware,
+  ttcLinesAtStopInWindow,
+} from './gtfsZipSchedule.js';
 
 const useDb = String(process.env.USE_DB_SCHEDULE || '') === '1';
 
+let nextArrivalsFromSchedule;
+let expandStopIdsIfStation;
+let linesAtStopWindow;
+
 if (useDb) {
   // CockroachDB-backed schedule + station helpers
-  export {
-    nextArrivalsFromSchedule,
-    expandStopIdsIfStation,
-    linesAtStopWindow,
-  } from './scheduleDb.js';
+  nextArrivalsFromSchedule = dbSched.nextArrivalsFromSchedule;
+  expandStopIdsIfStation   = dbSched.expandStopIdsIfStation;
+  linesAtStopWindow        = dbSched.linesAtStopWindow;
 } else {
   // Zero-DB (GTFS zip) fallback for local/dev use
-  import {
-    loadTtcGtfsFromUrl,
-    ttcNextArrivalsFromSchedule,
-    expandStopIdsStationAware,
-    ttcLinesAtStopInWindow,
-  } from './gtfsZipSchedule.js';
-
   let loadOncePromise = null;
   const DEFAULT_TTC_GTFS =
     process.env.TTC_GTFS_ZIP_URL ||
@@ -29,25 +32,27 @@ if (useDb) {
     await loadOncePromise;
   }
 
-  export async function nextArrivalsFromSchedule(agencyKey, stopId, opts = {}) {
+  nextArrivalsFromSchedule = async (agencyKey, stopId, opts = {}) => {
     const ag = String(agencyKey || '').toLowerCase();
     if (ag !== 'ttc') return [];
     await ensureLoaded();
     return ttcNextArrivalsFromSchedule(stopId, opts);
-  }
+  };
 
-  export async function expandStopIdsIfStation(agencyKey, stopId) {
+  expandStopIdsIfStation = async (agencyKey, stopId) => {
     const ag = String(agencyKey || '').toLowerCase();
     if (ag !== 'ttc') return [String(stopId)];
     await ensureLoaded();
     return expandStopIdsStationAware(stopId);
-  }
+  };
 
-  export async function linesAtStopWindow(agencyKey, stopId, { windowMin = 60 } = {}) {
+  linesAtStopWindow = async (agencyKey, stopId, { windowMin = 60 } = {}) => {
     const ag = String(agencyKey || '').toLowerCase();
     if (ag !== 'ttc') return [];
     await ensureLoaded();
     return ttcLinesAtStopInWindow(stopId, { windowMin });
-  }
+  };
 }
+
+export { nextArrivalsFromSchedule, expandStopIdsIfStation, linesAtStopWindow };
 
