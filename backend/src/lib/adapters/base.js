@@ -1,9 +1,13 @@
 // backend/src/lib/adapters/base.js
 
 import GtfsRT from 'gtfs-realtime-bindings';
+
+const DISABLE_RT = String(process.env.DISABLE_RT || '') === '1';
+
 const TransitRealtime = GtfsRT.transit_realtime;
 
 export async function fetchRT(url, { timeoutMs = 8000 } = {}) {
+  if (DISABLE_RT) return { entity: [] }; // neutral empty feed
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeoutMs);
   try {

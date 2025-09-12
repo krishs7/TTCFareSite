@@ -1,5 +1,5 @@
 // backend/src/lib/schedule.js
-// Chooses DB-backed schedule when USE_DB_SCHEDULE=1, otherwise the zero-DB ZIP loader (dev).
+// Selects DB-backed schedule when USE_DB_SCHEDULE=1, else the dev ZIP loader.
 
 import * as dbSched from './scheduleDb.js';
 import {
@@ -16,12 +16,12 @@ let expandStopIdsIfStation;
 let linesAtStopWindow;
 
 if (useDb) {
-  // CockroachDB-backed schedule + station helpers
+  // Cockroach-backed
   nextArrivalsFromSchedule = dbSched.nextArrivalsFromSchedule;
   expandStopIdsIfStation   = dbSched.expandStopIdsIfStation;
   linesAtStopWindow        = dbSched.linesAtStopWindow;
 } else {
-  // Zero-DB (GTFS zip) fallback for local/dev use
+  // Zero-DB (dev-only) loader
   let loadOncePromise = null;
   const DEFAULT_TTC_GTFS =
     process.env.TTC_GTFS_ZIP_URL ||

@@ -4,6 +4,9 @@ import { adapters, normalizeAgency } from '../lib/adapters/index.js';
 import { getStopId, findCandidateStopIds } from '../lib/stopResolver.js';
 import { nextArrivalsFromSchedule, expandStopIdsIfStation, linesAtStopWindow } from '../lib/schedule.js';
 
+const DISABLE_RT = String(process.env.DISABLE_RT || '') === '1';
+
+
 const router = Router();
 
 // ---------- helpers ----------
@@ -136,20 +139,23 @@ router.get('/arrivals', async (req, res) => {
     for (const c of candidates) {
       const stopIds = await expandStopIds(agencyKey, c.id);
 
-      // realtime
-      let rtLists = [];
-      for (const sid of stopIds) {
-        try {
-          const list = await adapter.nextArrivalsByStop(sid, {
-            limit,
-            routeRef: routeRef || undefined,
-            fromEpochSec
-          });
-          if (list?.length) rtLists.push(list);
-        } catch {}
+      // realtime (disabled when DISABLE_RT=1)
+      let rtMerged = [];
+      if (!DISABLE_RT) {
+        let rtLists = [];
+        for (const sid of stopIds) {
+          try {
+            const list = await adapter.nextArrivalsByStop(sid, {
+              limit,
+              routeRef: routeRef || undefined,
+              fromEpochSec
+            });
+            if (list?.length) rtLists.push(list);
+          } catch {}
+        }
+        rtMerged = mergeAndSortArrivals(rtLists, limit);
+        if (rtMerged.length) { chosen = c; arrivals = rtMerged; source = 'rt'; break; }
       }
-      const rtMerged = mergeAndSortArrivals(rtLists, limit);
-      if (rtMerged.length) { chosen = c; arrivals = rtMerged; source = 'rt'; break; }
 
       // schedule
       let schLists = [];
@@ -182,7 +188,7 @@ router.get('/arrivals', async (req, res) => {
           for (const l of lines) set.add(String(l));
         } catch {}
       }
-      if (set.size === 0) {
+      if (!DISABLE_RT && set.size === 0) {
         for (const sid of stopIds) {
           try {
             const list = await adapters[agencyKey].nextArrivalsByStop(sid, { limit: 50 });

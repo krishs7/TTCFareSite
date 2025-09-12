@@ -1,4 +1,4 @@
-// backend/src/lib/scheduleDb.js (CockroachDB-safe)
+// backend/src/lib/scheduleDb.js (CockroachDB-safe, uses stops.id)
 import { getPool } from '../db.js';
 import { DateTime } from 'luxon';
 
@@ -46,31 +46,31 @@ function activeServiceIdsCTE(alias = 'active') {
   `;
 }
 
-// ---------- FIXED: use stops.id instead of stops.stop_id everywhere ----------
+// ---------- station-aware expansion using stops.id ----------
 export async function expandStopIdsIfStation(agencyKey, stopId) {
   const pool = getPool(); if (!pool) return [String(stopId)];
   const ag = String(agencyKey || '').toUpperCase();
   const id = String(stopId);
 
-  // look up the exact record by id
   const { rows } = await pool.query(
-    `SELECT id, location_type, parent_station FROM stops WHERE agency=$1 AND id=$2 LIMIT 1`, [ag, id]);
+    `SELECT id, location_type, parent_station FROM stops WHERE agency=$1 AND id=$2 LIMIT 1`,
+    [ag, id]
+  );
   if (!rows.length) return [id];
   const s = rows[0];
 
-  // if it's a station (location_type=1), include all children + the station itself
+  // TTC GTFS often marks the parent "station" as location_type=1, platforms as 0
   if (Number(s.location_type) === 1) {
     const kids = await pool.query(`SELECT id FROM stops WHERE agency=$1 AND parent_station=$2`, [ag, id]);
-    return [id, ...kids.rows.map(r => r.id)];
+    const arr = kids.rows.map(r => String(r.id));
+    return arr.length ? [id, ...arr] : [id];
   }
 
-  // if it's a platform with a parent_station, include parent + all siblings
   if (s.parent_station) {
     const sibs = await pool.query(`SELECT id FROM stops WHERE agency=$1 AND parent_station=$2`, [ag, s.parent_station]);
-    return [s.parent_station, ...sibs.rows.map(r => r.id)];
+    return [String(s.parent_station), ...sibs.rows.map(r => String(r.id))];
   }
 
-  // otherwise just the single stop
   return [id];
 }
 
