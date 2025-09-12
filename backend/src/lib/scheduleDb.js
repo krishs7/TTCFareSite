@@ -46,22 +46,31 @@ function activeServiceIdsCTE(alias = 'active') {
   `;
 }
 
+// ---------- FIXED: use stops.id instead of stops.stop_id everywhere ----------
 export async function expandStopIdsIfStation(agencyKey, stopId) {
   const pool = getPool(); if (!pool) return [String(stopId)];
   const ag = String(agencyKey || '').toUpperCase();
   const id = String(stopId);
+
+  // look up the exact record by id
   const { rows } = await pool.query(
-    `SELECT stop_id, location_type, parent_station FROM stops WHERE agency=$1 AND stop_id=$2 LIMIT 1`, [ag, id]);
+    `SELECT id, location_type, parent_station FROM stops WHERE agency=$1 AND id=$2 LIMIT 1`, [ag, id]);
   if (!rows.length) return [id];
   const s = rows[0];
+
+  // if it's a station (location_type=1), include all children + the station itself
   if (Number(s.location_type) === 1) {
-    const kids = await pool.query(`SELECT stop_id FROM stops WHERE agency=$1 AND parent_station=$2`, [ag, id]);
-    return [id, ...kids.rows.map(r => r.stop_id)];
+    const kids = await pool.query(`SELECT id FROM stops WHERE agency=$1 AND parent_station=$2`, [ag, id]);
+    return [id, ...kids.rows.map(r => r.id)];
   }
+
+  // if it's a platform with a parent_station, include parent + all siblings
   if (s.parent_station) {
-    const sibs = await pool.query(`SELECT stop_id FROM stops WHERE agency=$1 AND parent_station=$2`, [ag, s.parent_station]);
-    return [s.parent_station, ...sibs.rows.map(r => r.stop_id)];
+    const sibs = await pool.query(`SELECT id FROM stops WHERE agency=$1 AND parent_station=$2`, [ag, s.parent_station]);
+    return [s.parent_station, ...sibs.rows.map(r => r.id)];
   }
+
+  // otherwise just the single stop
   return [id];
 }
 
