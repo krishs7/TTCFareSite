@@ -25,13 +25,32 @@ export function getPool() {
   } else if (caText) {
     cfg.ssl = { ca: caText, rejectUnauthorized: true };
   } else {
-    // Fall back to TLS without explicit CA; useful if the system trust store contains ISRG Root
-    // and your DATABASE_URL includes sslmode=require/verify-full.
+    // Cockroach Cloud usually works with verify-full in the URL, but keep TLS on.
     cfg.ssl = { rejectUnauthorized: false };
   }
 
+  // Create pool
   pool = new Pool(cfg);
   pool.on('error', (err) => console.error('[db] idle client error', err));
+
+  // One-time visibility: where are we connecting?
+  try {
+    const u = new URL(connectionString);
+    const host = u.hostname;
+    const db   = u.pathname.replace(/^\//,'');
+    console.log(`[db] pool created → host=${host} db=${db} ssl=${!!cfg.ssl}`);
+  } catch {}
+
+  // Fire-and-forget a tiny ping so errors show up in logs instead of being swallowed later
+  pool.query('select current_database() as db, current_user as usr, version() as ver')
+    .then(r => {
+      const row = r.rows?.[0] || {};
+      console.log(`[db] connected → db=${row.db} user=${row.usr}`);
+    })
+    .catch(e => {
+      console.error('[db] connection test failed:', e.message);
+    });
+
   return pool;
 }
 

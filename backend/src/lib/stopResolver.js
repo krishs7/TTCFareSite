@@ -43,7 +43,15 @@ export async function findCandidateStopIds(agencyKey, nameLike, max = 12) {
   });
 
   const wantsStationish = /\bstation\b/i.test(q);
-  const scored = filtered
+
+  // ✅ If user said "station", and we have any "platform" rows, prefer ONLY those.
+  let poolRows = filtered;
+  if (wantsStationish) {
+    const platforms = filtered.filter(r => /\bplatform\b/i.test(String(r.name)));
+    if (platforms.length) poolRows = platforms;
+  }
+
+  const scored = poolRows
     .map(r => ({ ...r, _score: wantsStationish ? stationScore(r) : defaultScore(r, q) }))
     .sort((a, b) => b._score - a._score || String(a.name).localeCompare(String(b.name)));
 
@@ -53,9 +61,9 @@ export async function findCandidateStopIds(agencyKey, nameLike, max = 12) {
 function stationScore(r) {
   const name = String(r.name || '').toLowerCase();
   let s = 0;
-  if (/\bplatform\b/.test(name)) s += 5;
+  if (/\bplatform\b/.test(name)) s += 10;               // stronger bias to platforms
   if (/\b(east|west|north|south)bound\b/.test(name)) s += 3;
-  if (Number(r.location_type) !== 1) s += 1; // platforms often 0
+  if (Number(r.location_type) !== 1) s += 1;            // platforms often 0
   return s;
 }
 function defaultScore(r, q) {
