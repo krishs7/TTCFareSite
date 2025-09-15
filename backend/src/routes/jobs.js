@@ -84,7 +84,7 @@ export async function runDueSmsJobs() {
   return { processed: sentIds.length, ids: sentIds };
 }
 
-// --- HTTP endpoint to run the queue on demand ---
+//HTTP endpoint to run the queue on demand
 router.post('/run', async (_req, res) => {
   try {
     const r = await runDueSmsJobs();

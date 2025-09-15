@@ -1,5 +1,4 @@
 // backend/src/lib/gtfsZipSchedule.js
-// Zero-DB GTFS schedule fallback + station-aware utilities for TTC.
 // Loads TTC GTFS zip -> computes next departures & lines in memory.
 
 import unzipper from 'unzipper';
@@ -204,7 +203,6 @@ export function ttcNextArrivalsFromSchedule(stopId, { limit = 10, routeRef = nul
 
 /**
  * Compute distinct route_short_name values serving a stop in the next `windowMin` minutes.
- * Used to build accurate "lines at this station" suggestions.
  */
 export function ttcLinesAtStopInWindow(stopId, { windowMin = 60, fromTime = undefined } = {}) {
   if (!S.loaded) return [];

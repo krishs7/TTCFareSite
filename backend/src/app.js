@@ -43,8 +43,6 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Rate-limit the API
-// NOTE: express-rate-limit warns when app.set('trust proxy', ...) is enabled
-// unless you explicitly acknowledge it. The validate override below keeps the
 // limiter happy while preserving your existing behavior.
 const limiter = rateLimit({
   windowMs: 60 * 1000,

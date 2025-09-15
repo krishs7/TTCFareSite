@@ -142,9 +142,8 @@ router.post('/reminders', async (req, res) => {
 });
 
 /**
- * TEST-ONLY: POST /api/sms/reminders/test  { recipientId, offsetsSec: [..] }
- * Keeps allowed kinds while letting you set small offsets for fast tests.
- * Enable with SMS_TEST_API=true
+ * TEST-ONLY: POST /api/sms/reminders/test
+ * Keeps allowed kinds while letting you set small offsets for fast tests
  */
 router.post('/reminders/test', async (req, res) => {
   if (SMS_TEST_API !== 'true') return res.status(404).end();

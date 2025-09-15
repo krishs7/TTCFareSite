@@ -11,8 +11,6 @@ app.listen(PORT, () => {
 
 /**
  * Optional in-process job loop (for Render web services).
- * Set JOBS_LOOP=true in your environment to enable.
- * This complements (or replaces) hitting /api/jobs/run from a cron.
  */
 if (process.env.JOBS_LOOP === 'true') {
   let running = false;
