@@ -1,7 +1,8 @@
-// backend/src/lib/scheduleDb.js (CockroachDB-safe, uses stops.id)
+// backend/src/lib/scheduleDb.js
 import { getPool } from '../db.js';
 import { DateTime } from 'luxon';
 
+const STATION_RADIUS_M = Number(process.env.STATION_RADIUS_M || 300);
 
 function normalizeRouteKey(s) {
   return String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^0+/, '');
@@ -47,34 +48,70 @@ function activeServiceIdsCTE(alias = 'active') {
   `;
 }
 
-// ---------- station-aware expansion using stops.id ----------
+/* ---------- Proximity expansion (used when GTFS links are missing) ---------- */
+async function expandByProximity(agencyKey, lat, lon) {
+  const pool = getPool(); if (!pool) return [];
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [];
+
+  const R = STATION_RADIUS_M;
+  const dlat = R / 111320;
+  const dlon = R / (111320 * Math.max(0.1, Math.cos(lat * Math.PI / 180)));
+
+  const { rows } = await pool.query(
+    `SELECT id, name, lat, lon
+       FROM stops
+      WHERE agency=$1
+        AND lat BETWEEN $2 AND $3
+        AND lon BETWEEN $4 AND $5`,
+    [String(agencyKey || '').toUpperCase(), lat - dlat, lat + dlat, lon - dlon, lon + dlon]
+  );
+
+  const center = { lat, lon };
+  const near = rows.map(r => {
+    const dx = (r.lat - center.lat) * 111320;
+    const dy = (r.lon - center.lon) * 111320 * Math.cos((center.lat * Math.PI) / 180);
+    return { id: String(r.id), m: Math.hypot(dx, dy) };
+  }).filter(r => r.m <= R).sort((a,b)=>a.m-b.m);
+
+  return near.map(r => r.id);
+}
+
+/* ---------- Station-aware expansion exported to routes ---------- */
 export async function expandStopIdsIfStation(agencyKey, stopId) {
   const pool = getPool(); if (!pool) return [String(stopId)];
   const ag = String(agencyKey || '').toUpperCase();
   const id = String(stopId);
 
   const { rows } = await pool.query(
-    `SELECT id, location_type, parent_station FROM stops WHERE agency=$1 AND id=$2 LIMIT 1`,
+    `SELECT id, name, lat, lon, coalesce(location_type,0) AS location_type, parent_station
+       FROM stops WHERE agency=$1 AND id=$2 LIMIT 1`,
     [ag, id]
   );
   if (!rows.length) return [id];
   const s = rows[0];
 
-  // TTC GTFS often marks the parent "station" as location_type=1, platforms as 0
+  // Normal GTFS: station -> children
   if (Number(s.location_type) === 1) {
     const kids = await pool.query(`SELECT id FROM stops WHERE agency=$1 AND parent_station=$2`, [ag, id]);
     const arr = kids.rows.map(r => String(r.id));
-    return arr.length ? [id, ...arr] : [id];
+    if (arr.length) return [id, ...arr];
   }
-
+  // Normal GTFS: platform -> parent + siblings
   if (s.parent_station) {
     const sibs = await pool.query(`SELECT id FROM stops WHERE agency=$1 AND parent_station=$2`, [ag, s.parent_station]);
     return [String(s.parent_station), ...sibs.rows.map(r => String(r.id))];
   }
 
+  // TTC quirk: "Station" with no relations -> group by proximity
+  const looksStationish = /\bstation\b|\bstn\b/i.test(String(s.name || ''));
+  if (looksStationish && Number.isFinite(+s.lat) && Number.isFinite(+s.lon)) {
+    const near = await expandByProximity(ag, +s.lat, +s.lon);
+    if (near.length) return [...new Set([id, ...near])];
+  }
   return [id];
 }
 
+/* ---------- Schedule lookups ---------- */
 export async function nextArrivalsFromSchedule(agencyKey, stopId, { limit=10, routeRef=null, fromTime } = {}) {
   const pool = getPool(); if (!pool) return [];
   const { todayISO, secNow } = nowParts(fromTime);
@@ -83,22 +120,21 @@ export async function nextArrivalsFromSchedule(agencyKey, stopId, { limit=10, ro
   async function queryDay(dateStr, secCutoff) {
     const q = `
       ${activeServiceIdsCTE('active')}
-      SELECT st.departure_seconds AS depsec,
+      SELECT st.departure_seconds  AS depsec,
              coalesce(r.route_short_name,'') AS route_short_name,
              coalesce(t.trip_headsign,'')    AS headsign
-      FROM stop_times st
-      JOIN trips  t ON t.trip_id  = st.trip_id
-      JOIN routes r ON r.route_id = t.route_id
-      WHERE st.stop_id = $2
-        AND t.service_id IN (SELECT service_id FROM active)
-        AND st.departure_seconds >= $3
-        AND ($4::text IS NULL
-             OR ${ROUTE_KEY_EXPR} = $4
-             OR ${ROUTE_KEY_EXPR} LIKE $4 || '%'
-             OR $4 LIKE ${ROUTE_KEY_EXPR} || '%')
-      ORDER BY st.departure_seconds ASC
-      LIMIT $5
-    `;
+        FROM stop_times st
+        JOIN trips  t ON t.trip_id  = st.trip_id
+        JOIN routes r ON r.route_id = t.route_id
+       WHERE st.stop_id = $2
+         AND t.service_id IN (SELECT service_id FROM active)
+         AND st.departure_seconds >= $3
+         AND ($4::text IS NULL
+              OR ${ROUTE_KEY_EXPR} = $4
+              OR ${ROUTE_KEY_EXPR} LIKE $4 || '%'
+              OR $4 LIKE ${ROUTE_KEY_EXPR} || '%')
+       ORDER BY st.departure_seconds ASC
+       LIMIT $5`;
     const { rows } = await pool.query(q, [dateStr, String(stopId), secCutoff, normRef, limit]);
     const base = DateTime.fromISO(dateStr, { zone: 'America/Toronto' }).startOf('day');
     return rows.map(r => ({
@@ -124,15 +160,14 @@ export async function linesAtStopWindow(agencyKey, stopId, { windowMin = 60 } = 
   const q = `
     ${activeServiceIdsCTE('active')}
     SELECT DISTINCT coalesce(r.route_short_name,'') AS rsn
-    FROM stop_times st
-    JOIN trips  t ON t.trip_id  = st.trip_id
-    JOIN routes r ON r.route_id = t.route_id
-    WHERE st.stop_id = $2
-      AND t.service_id IN (SELECT service_id FROM active)
-      AND st.departure_seconds BETWEEN $3 AND $4
-  `;
+      FROM stop_times st
+      JOIN trips  t ON t.trip_id  = st.trip_id
+      JOIN routes r ON r.route_id = t.route_id
+     WHERE st.stop_id = $2
+       AND t.service_id IN (SELECT service_id FROM active)
+       AND st.departure_seconds BETWEEN $3 AND $4`;
   const { rows } = await pool.query(q, [todayISO, String(stopId), secNow, secLimit]);
   return rows.map(r => String(r.rsn || '')).filter(Boolean)
-    .sort((a,b)=> a.localeCompare(b, undefined, { numeric: true }));
+            .sort((a,b)=> a.localeCompare(b, undefined, { numeric: true }));
 }
 

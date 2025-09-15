@@ -132,34 +132,38 @@ router.get('/arrivals', async (req, res) => {
     }
     if (!candidates.length) return res.status(404).json({ error: 'Stop not found' });
 
-    let chosen = null;
+        // NEW: expand ALL candidates (station-aware + proximity) and union
+    const expandedSets = await Promise.all(
+      candidates.map(c => expandStopIds(agencyKey, c.id))
+    );
+    const allStopIds = [...new Set(expandedSets.flat().map(String))];
+
+    // Prefer the first candidate’s label, but we’ll fetch across ALL expanded ids
+    let chosen = candidates[0] || null;
     let arrivals = [];
     let source = 'rt';
 
-    for (const c of candidates) {
-      const stopIds = await expandStopIds(agencyKey, c.id);
-
-      // realtime (disabled when DISABLE_RT=1)
-      let rtMerged = [];
-      if (!DISABLE_RT) {
-        let rtLists = [];
-        for (const sid of stopIds) {
-          try {
-            const list = await adapter.nextArrivalsByStop(sid, {
-              limit,
-              routeRef: routeRef || undefined,
-              fromEpochSec
-            });
-            if (list?.length) rtLists.push(list);
-          } catch {}
-        }
-        rtMerged = mergeAndSortArrivals(rtLists, limit);
-        if (rtMerged.length) { chosen = c; arrivals = rtMerged; source = 'rt'; break; }
+    // realtime (disabled when DISABLE_RT=1)
+    if (!DISABLE_RT) {
+      const rtLists = [];
+      for (const sid of allStopIds) {
+        try {
+          const list = await adapter.nextArrivalsByStop(sid, {
+            limit,
+            routeRef: routeRef || undefined,
+            fromEpochSec
+          });
+          if (list?.length) rtLists.push(list);
+        } catch {}
       }
+      arrivals = mergeAndSortArrivals(rtLists, limit);
+      if (arrivals.length) source = 'rt';
+    }
 
-      // schedule
-      let schLists = [];
-      for (const sid of stopIds) {
+    // schedule fallback (or primary when DISABLE_RT=1)
+    if (!arrivals.length) {
+      const schLists = [];
+      for (const sid of allStopIds) {
         try {
           const list = await nextArrivalsFromSchedule(agencyKey, sid, {
             limit,
@@ -169,27 +173,32 @@ router.get('/arrivals', async (req, res) => {
           if (list?.length) schLists.push(list);
         } catch {}
       }
-      const schMerged = mergeAndSortArrivals(schLists, limit);
-      if (schMerged.length) { chosen = c; arrivals = schMerged; source = 'schedule'; break; }
+      arrivals = mergeAndSortArrivals(schLists, limit);
+      if (arrivals.length) source = 'schedule';
     }
+
+    
 
     if (!chosen) {
       return res.json({ arrivals: [], source: 'rt', availableRoutes: [], generatedAt: new Date().toISOString() });
     }
 
-    // distinct lines at location (full-day)
+        // distinct lines at location (full-day)
     let availableRoutes = undefined;
     if (!routeRef) {
-      const stopIds = await expandStopIds(agencyKey, chosen.id);
+      const idsForLines = (typeof allStopIds !== 'undefined' && allStopIds.length)
+        ? allStopIds
+        : await expandStopIds(agencyKey, chosen.id);
+
       const set = new Set();
-      for (const sid of stopIds) {
+      for (const sid of idsForLines) {
         try {
           const lines = await linesAtStopWindow(agencyKey, sid, { windowMin: 1440 });
           for (const l of lines) set.add(String(l));
         } catch {}
       }
       if (!DISABLE_RT && set.size === 0) {
-        for (const sid of stopIds) {
+        for (const sid of idsForLines) {
           try {
             const list = await adapters[agencyKey].nextArrivalsByStop(sid, { limit: 50 });
             for (const a of list || []) if (a.routeShortName) set.add(String(a.routeShortName));
@@ -198,6 +207,7 @@ router.get('/arrivals', async (req, res) => {
       }
       availableRoutes = Array.from(set).sort((a,b)=> String(a).localeCompare(String(b), undefined, { numeric: true }));
     }
+
 
     return res.json({
       arrivals,
