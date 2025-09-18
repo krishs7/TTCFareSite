@@ -148,7 +148,10 @@ function SmsEnroll() {
               <option value="publicmobile">Public Mobile (TELUS)</option>
               <option value="telus">TELUS</option>
               <option value="bell">Bell</option>
-              <option value="rogers">Rogers</option>
+              {/* Rogers temporarily unavailable */}
+              <option value="rogers" disabled aria-disabled="true" title="Coming soon">
+                Rogers (Coming soon)
+              </option>
               <option value="freedom">Freedom</option>
             </select>
             <button className="btn btn-ghost" onClick={onStart}>Send code</button>
